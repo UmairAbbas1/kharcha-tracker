@@ -2,42 +2,31 @@ import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
 } from 'recharts'
 import { PieChart as PieIcon } from 'lucide-react'
-import { CAT_COLORS, pkr } from '../constants'
+
+const pkr = (n) => `Rs ${Number(n).toLocaleString('en-PK')}`
 
 const CustomTooltip = ({ active, payload }) => {
   if (!active || !payload?.length) return null
-  const { name, value } = payload[0]
+  const { name, value, payload: p } = payload[0]
   return (
     <div className="bg-white/95 border border-blue-100 rounded-2xl px-3 py-2 shadow-lg text-xs font-semibold">
-      <span style={{ color: CAT_COLORS[name] }}>{name}</span>
+      <span style={{ color: p.color }}>{name}</span>
       <span className="ml-2 text-gray-500">{pkr(value)}</span>
     </div>
   )
 }
 
-const CustomLegend = ({ data }) => (
-  <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-3">
-    {data.map(({ name, value }) => (
-      <div key={name} className="flex items-center gap-1.5 text-xs text-gray-600">
-        <span
-          className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-          style={{ background: CAT_COLORS[name] }}
-        />
-        <span className="font-semibold">{name}</span>
-        <span className="text-gray-400">{pkr(value)}</span>
-      </div>
-    ))}
-  </div>
-)
-
 export default function SpendPie({ expenses }) {
-  const data = Object.entries(
-    expenses.reduce((acc, e) => {
-      acc[e.category] = (acc[e.category] || 0) + e.amount
-      return acc
-    }, {})
-  ).map(([name, value]) => ({ name, value }))
+  // Group by category using joined data from Supabase
+  const catMap = {}
+  expenses.forEach(e => {
+    const name  = e.categories?.name  || 'Other'
+    const color = e.categories?.color || '#94a3b8'
+    if (!catMap[name]) catMap[name] = { name, value: 0, color }
+    catMap[name].value += Number(e.amount)
+  })
 
+  const data = Object.values(catMap)
   if (!data.length) return null
 
   return (
@@ -60,17 +49,26 @@ export default function SpendPie({ expenses }) {
             stroke="none"
           >
             {data.map(entry => (
-              <Cell
-                key={entry.name}
-                fill={CAT_COLORS[entry.name] || '#94a3b8'}
-              />
+              <Cell key={entry.name} fill={entry.color} />
             ))}
           </Pie>
           <Tooltip content={<CustomTooltip />} />
         </PieChart>
       </ResponsiveContainer>
 
-      <CustomLegend data={data} />
+      {/* Legend */}
+      <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-3">
+        {data.map(({ name, value, color }) => (
+          <div key={name} className="flex items-center gap-1.5 text-xs text-gray-600">
+            <span
+              className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+              style={{ background: color }}
+            />
+            <span className="font-semibold">{name}</span>
+            <span className="text-gray-400">{pkr(value)}</span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

@@ -1,28 +1,37 @@
 import { useState } from 'react'
 import { PlusCircle } from 'lucide-react'
-import { CATEGORIES } from '../constants'
 
-export default function AddForm({ onAdd, loading }) {
+export default function AddForm({ categories = [], onAdd, loading }) {
   const [title,    setTitle]    = useState('')
   const [amount,   setAmount]   = useState('')
-  const [category, setCategory] = useState('Food')
+  const [catId,    setCatId]    = useState('')
   const [date,     setDate]     = useState(new Date().toISOString().split('T')[0])
   const [error,    setError]    = useState('')
+
+  // Default to first category once categories load
+  const activeCatId = catId || categories[0]?.id || ''
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
 
-    if (!title.trim()) return setError('Please enter a title.')
+    if (!title.trim())                            return setError('Please enter a title.')
     if (!amount || isNaN(amount) || Number(amount) <= 0)
-      return setError('Enter a valid amount.')
+                                                  return setError('Enter a valid amount.')
+    if (!activeCatId)                             return setError('No category available.')
 
     try {
-      await onAdd({ title: title.trim(), amount: Number(amount), category, date })
+      await onAdd({
+        title:       title.trim(),
+        amount:      Number(amount),
+        category_id: activeCatId,
+        date,
+      })
       setTitle('')
       setAmount('')
+      // keep date + category for quick repeat entries
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to add expense.')
+      setError(err.message || 'Failed to add expense.')
     }
   }
 
@@ -62,12 +71,12 @@ export default function AddForm({ onAdd, loading }) {
           </div>
 
           <select
-            value={category}
-            onChange={e => setCategory(e.target.value)}
+            value={activeCatId}
+            onChange={e => setCatId(e.target.value)}
             className="rounded-2xl border border-blue-100 bg-white/60 px-3 py-2.5 text-sm text-gray-700 cursor-pointer transition"
           >
-            {CATEGORIES.map(c => (
-              <option key={c} value={c}>{c}</option>
+            {categories.map(c => (
+              <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
         </div>
@@ -89,7 +98,7 @@ export default function AddForm({ onAdd, loading }) {
         {/* Submit */}
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || categories.length === 0}
           className="w-full rounded-2xl py-2.5 text-sm font-bold text-white flex items-center justify-center gap-2 shadow-md transition-all active:scale-95 disabled:opacity-60"
           style={{ background: '#4169E1' }}
         >

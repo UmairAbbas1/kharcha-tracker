@@ -1,5 +1,4 @@
 import { Trash2, Receipt } from 'lucide-react'
-import { CAT_COLORS, CAT_BG, pkr } from '../constants'
 import { categoryIcon } from './CategoryIcon'
 
 function dateLabel(dateStr) {
@@ -10,38 +9,39 @@ function dateLabel(dateStr) {
   return dateStr.slice(5).replace('-', '/')
 }
 
-function CatBadge({ cat }) {
+function CatBadge({ name, color }) {
   return (
     <span
       className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full"
-      style={{ background: CAT_BG[cat], color: CAT_COLORS[cat] }}
+      style={{ background: color + '22', color }}
     >
-      {cat}
+      {name}
     </span>
   )
 }
 
 function ExpenseRow({ expense, onDelete }) {
+  const cat   = expense.categories || {}
+  const color = cat.color || '#94a3b8'
+  const pkr   = (n) => `Rs ${Number(n).toLocaleString('en-PK')}`
+
   return (
     <div className="expense-row flex items-center gap-3 py-3 px-1 border-b border-blue-50 last:border-0">
-      {/* Icon */}
       <div
         className="w-9 h-9 rounded-2xl flex items-center justify-center flex-shrink-0"
-        style={{ background: CAT_BG[expense.category] }}
+        style={{ background: color + '1a' }}
       >
-        {categoryIcon(expense.category, CAT_COLORS[expense.category])}
+        {categoryIcon(cat.icon, color)}
       </div>
 
-      {/* Details */}
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold text-gray-800 truncate">{expense.title}</p>
         <div className="flex items-center gap-2 mt-0.5">
-          <CatBadge cat={expense.category} />
+          <CatBadge name={cat.name || 'Other'} color={color} />
           <span className="text-xs text-gray-400">{dateLabel(expense.date)}</span>
         </div>
       </div>
 
-      {/* Amount + Delete */}
       <div className="flex items-center gap-2 flex-shrink-0">
         <span className="text-sm font-extrabold" style={{ color: '#4169E1' }}>
           {pkr(expense.amount)}
@@ -59,9 +59,7 @@ function ExpenseRow({ expense, onDelete }) {
 }
 
 export default function ExpenseList({ expenses, onDelete, loading }) {
-  const sorted = [...expenses].sort(
-    (a, b) => b.date.localeCompare(a.date) || b.id - a.id
-  )
+  const pkr = (n) => `Rs ${Number(n).toLocaleString('en-PK')}`
 
   return (
     <div className="glass rounded-3xl p-6 shadow-lg">
@@ -79,14 +77,14 @@ export default function ExpenseList({ expenses, onDelete, loading }) {
         <div className="text-center py-10 text-gray-400 text-sm animate-pulse">
           Loading…
         </div>
-      ) : sorted.length === 0 ? (
+      ) : expenses.length === 0 ? (
         <div className="text-center py-10 text-gray-400 text-sm">
           <div className="text-4xl mb-2">🪙</div>
           No expenses yet. Add your first kharcha!
         </div>
       ) : (
         <div className="mt-2 max-h-80 overflow-y-auto pr-1">
-          {sorted.map(exp => (
+          {expenses.map(exp => (
             <ExpenseRow key={exp.id} expense={exp} onDelete={onDelete} />
           ))}
         </div>

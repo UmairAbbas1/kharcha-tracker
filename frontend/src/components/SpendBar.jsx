@@ -2,7 +2,8 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
 import { BarChart2 } from 'lucide-react'
-import { pkr } from '../constants'
+
+const pkr = (n) => `Rs ${Number(n).toLocaleString('en-PK')}`
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null
@@ -15,7 +16,6 @@ const CustomTooltip = ({ active, payload, label }) => {
 }
 
 export default function SpendBar({ expenses }) {
-  // Build last-7-days map
   const cutoff = new Date()
   cutoff.setDate(cutoff.getDate() - 6)
   const cutoffStr = cutoff.toISOString().split('T')[0]
@@ -23,11 +23,11 @@ export default function SpendBar({ expenses }) {
   const dayMap = {}
   expenses
     .filter(e => e.date >= cutoffStr)
-    .forEach(e => { dayMap[e.date] = (dayMap[e.date] || 0) + e.amount })
+    .forEach(e => { dayMap[e.date] = (dayMap[e.date] || 0) + Number(e.amount) })
 
   const data = Object.entries(dayMap)
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, amount]) => ({ date: date.slice(5), amount })) // show MM-DD
+    .map(([date, amount]) => ({ date: date.slice(5), amount }))
 
   if (!data.length) return null
 
@@ -40,11 +40,7 @@ export default function SpendBar({ expenses }) {
 
       <ResponsiveContainer width="100%" height={195}>
         <BarChart data={data} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
-          <CartesianGrid
-            strokeDasharray="3 3"
-            stroke="#e0e7ff"
-            vertical={false}
-          />
+          <CartesianGrid strokeDasharray="3 3" stroke="#e0e7ff" vertical={false} />
           <XAxis
             dataKey="date"
             tick={{ fontSize: 11, fill: '#94a3b8' }}
@@ -58,12 +54,7 @@ export default function SpendBar({ expenses }) {
             tickFormatter={v => v >= 1000 ? `${v / 1000}k` : v}
           />
           <Tooltip content={<CustomTooltip />} cursor={{ fill: '#4169E108' }} />
-          <Bar
-            dataKey="amount"
-            fill="#4169E1"
-            radius={[6, 6, 0, 0]}
-            maxBarSize={44}
-          />
+          <Bar dataKey="amount" fill="#4169E1" radius={[6, 6, 0, 0]} maxBarSize={44} />
         </BarChart>
       </ResponsiveContainer>
     </div>
