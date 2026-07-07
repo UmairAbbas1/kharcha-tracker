@@ -1,93 +1,117 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useAuth } from '../context/AuthContext'
+import { useAuth }      from '../context/AuthContext'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { getExpenses, createExpense, deleteExpense, getCategories } from '../api'
-import BalanceCard  from '../components/BalanceCard'
-import AddForm      from '../components/AddForm'
-import SpendPie     from '../components/SpendPie'
-import SpendBar     from '../components/SpendBar'
-import ExpenseList  from '../components/ExpenseList'
-import { LogOut } from 'lucide-react'
+import { useExpenses }  from '../hooks/useExpenses'
+import { getCategories, getAlertLogs } from '../api'
+import BalanceCard   from '../components/BalanceCard'
+import AddForm       from '../components/AddForm'
+import SpendPie      from '../components/SpendPie'
+import SpendBar      from '../components/SpendBar'
+import ExpenseList   from '../components/ExpenseList'
+import BudgetBanner  from '../components/BudgetBanner'
+import BudgetModal   from '../components/BudgetModal'
+import BottomSheet   from '../components/BottomSheet'
+import KharchaLogo   from '../components/KharchaLogo'
+import { LogOut, Wallet, Plus } from 'lucide-react'
 
 export default function DashboardPage() {
-  const { signOut, user } = useAuth()
+  const { signOut, user }                          = useAuth()
   const { activeWorkspace, workspaces, switchWorkspace } = useWorkspace()
 
-  const [expenses,   setExpenses]   = useState([])
-  const [categories, setCategories] = useState([])
-  const [loading,    setLoading]    = useState(true)
-  const [adding,     setAdding]     = useState(false)
-  const [error,      setError]      = useState(null)
+  const [categories,   setCategories]   = useState([])
+  const [alertLogs,    setAlertLogs]    = useState([])
+  const [catLoading,   setCatLoading]   = useState(true)
+  const [error,        setError]        = useState(null)
+  const [budgetOpen,   setBudgetOpen]   = useState(false)
+  const [sheetOpen,    setSheetOpen]    = useState(false)
+  const [prefill,      setPrefill]      = useState(null)
 
-  const fetchData = useCallback(async () => {
+  const currentMonth = new Date().toISOString().slice(0, 7)
+
+  // ── TanStack Query for expenses ───────────────────────────
+  const {
+    expenses,
+    isLoading:   expLoading,
+    addExpense,
+    isAdding,
+    addError,
+    resetAddError,
+    removeExpense,
+  } = useExpenses(activeWorkspace?.id)
+
+  // ── Categories + alert logs (existing pattern) ────────────
+  const fetchSupporting = useCallback(async () => {
     if (!activeWorkspace) return
-
     try {
-      setLoading(true)
+      setCatLoading(true)
       setError(null)
-
-      const [expRes, catRes] = await Promise.all([
-        getExpenses(activeWorkspace.id),
-        getCategories(activeWorkspace.id),
-      ])
-
-      setExpenses(expRes.data)
+      const catRes = await getCategories(activeWorkspace.id)
       setCategories(catRes.data)
+      getAlertLogs(activeWorkspace.id, currentMonth)
+        .then(r => setAlertLogs(r.data || []))
+        .catch(() => {})
     } catch (err) {
       console.error('[DashboardPage] fetch error:', err)
-      setError('Failed to load data. Check console for details.')
+      setError('Failed to load data.')
     } finally {
-      setLoading(false)
+      setCatLoading(false)
     }
   }, [activeWorkspace])
 
-  useEffect(() => { fetchData() }, [fetchData])
+  useEffect(() => { fetchSupporting() }, [fetchSupporting])
+
+  // Refresh alert logs 2 s after an expense is added (alert engine latency)
+  const refreshAlertLogs = () => {
+    if (!activeWorkspace) return
+    setTimeout(() => {
+      getAlertLogs(activeWorkspace.id, currentMonth)
+        .then(r => setAlertLogs(r.data || []))
+        .catch(() => {})
+    }, 2000)
+  }
 
   const handleAdd = async (data) => {
-    setAdding(true)
-    try {
-      const res = await createExpense(activeWorkspace.id, data)
-      setExpenses(prev => [res.data, ...prev])
-    } catch (err) {
-      throw err // re-throw so AddForm can show error
-    } finally {
-      setAdding(false)
-    }
+    await new Promise((resolve, reject) => {
+      addExpense(data, {
+        onSuccess: () => { setSheetOpen(false); setPrefill(null); refreshAlertLogs(); resolve() },
+        onError:   (err) => reject(err),
+      })
+    })
   }
 
-  const handleDelete = async (id) => {
-    // Optimistic update
-    setExpenses(prev => prev.filter(e => e.id !== id))
-    try {
-      await deleteExpense(id)
-    } catch (err) {
-      console.error('[handleDelete]', err)
-      fetchData() // revert on error
-    }
-  }
+  const total   = expenses.reduce((s, e) => s + Number(e.amount), 0)
+  const loading = expLoading || catLoading
 
-  const total = expenses.reduce((s, e) => s + Number(e.amount), 0)
+  const addFormProps = {
+    categories,
+    onAdd:          handleAdd,
+    loading:        isAdding,
+    prefill,
+    onClearPrefill: () => setPrefill(null),
+  }
 
   return (
     <>
       {/* Ambient blobs */}
-      <div className="blob w-96 h-96 bg-royal" style={{ top: '-80px', left: '-80px' }} />
-      <div className="blob w-80 h-80 bg-blush" style={{ bottom: '-60px', right: '-60px' }} />
+      <div className="blob w-96 h-96 bg-royal"    style={{ top: '-80px',  left: '-80px'  }} />
+      <div className="blob w-80 h-80 bg-blush"    style={{ bottom: '-60px', right: '-60px' }} />
       <div className="blob w-60 h-60 bg-indigo-300" style={{ top: '40%', left: '55%' }} />
 
       <div className="relative z-10 min-h-screen px-4 py-8 md:py-12">
-        {/* Header with workspace selector + sign out */}
+
+        {/* ── Header ── */}
         <header className="max-w-4xl mx-auto mb-8 flex items-center justify-between">
-          <div>
-            <h1
-              className="text-3xl md:text-4xl font-extrabold tracking-tight"
-              style={{ color: '#4169E1' }}
-            >
-              💸 Kharcha Tracker
-            </h1>
-            <p className="text-sm text-gray-400 mt-1">
-              {activeWorkspace?.name || 'Loading...'}
-            </p>
+          <div className="flex items-center gap-3">
+            <KharchaLogo size={36} />
+            <div>
+              <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight"
+                  style={{ color: '#4169E1' }}>
+                Kharcha Tracker
+              </h1>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {activeWorkspace?.name || 'Loading...'}
+              </p>
+            </div>
           </div>
 
           <div className="flex items-center gap-3">
@@ -98,12 +122,20 @@ export default function DashboardPage() {
                 className="text-xs bg-white/60 border border-blue-100 rounded-xl px-3 py-2 text-gray-700 cursor-pointer"
               >
                 {workspaces.map(ws => (
-                  <option key={ws.id} value={ws.id}>
-                    {ws.name}
-                  </option>
+                  <option key={ws.id} value={ws.id}>{ws.name}</option>
                 ))}
               </select>
             )}
+
+            <button
+              onClick={() => setBudgetOpen(true)}
+              className="text-xs font-bold flex items-center gap-1.5 px-3 py-2 rounded-xl
+                         border border-blue-100 bg-white/60 text-royal hover:bg-blue-50 transition"
+              title="Set budgets"
+            >
+              <Wallet size={13} />
+              Budgets
+            </button>
 
             <button
               onClick={signOut}
@@ -116,28 +148,30 @@ export default function DashboardPage() {
           </div>
         </header>
 
-        {/* Error banner */}
-        {error && (
-          <div className="max-w-4xl mx-auto mb-5 bg-red-50 border border-red-200 text-red-600 text-sm rounded-2xl px-5 py-3 flex items-center justify-between gap-3">
-            <span>⚠️ {error}</span>
+        {/* ── Error banner ── */}
+        {(error || addError) && (
+          <div className="max-w-4xl mx-auto mb-5 bg-red-50 border border-red-200 text-red-600
+                          text-sm rounded-2xl px-5 py-3 flex items-center justify-between gap-3">
+            <span>⚠️ {error || addError?.message}</span>
             <button
-              onClick={fetchData}
+              onClick={() => { setError(null); resetAddError?.() }}
               className="text-xs font-bold underline hover:no-underline"
             >
-              Retry
+              Dismiss
             </button>
           </div>
         )}
 
         <div className="max-w-4xl mx-auto space-y-5">
-          {/* Balance — full width */}
+          <BudgetBanner alertLogs={alertLogs} />
           <BalanceCard total={total} count={expenses.length} loading={loading} />
 
-          {/* Two-column grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {/* Left */}
+            {/* Left — AddForm desktop only */}
             <div className="flex flex-col gap-5">
-              <AddForm categories={categories} onAdd={handleAdd} loading={adding} />
+              <div className="hidden md:block">
+                <AddForm {...addFormProps} />
+              </div>
               <SpendPie expenses={expenses} />
             </div>
 
@@ -146,18 +180,45 @@ export default function DashboardPage() {
               <SpendBar expenses={expenses} />
               <ExpenseList
                 expenses={expenses}
-                onDelete={handleDelete}
+                onDelete={removeExpense}
                 loading={loading}
               />
             </div>
           </div>
         </div>
 
-        {/* Footer */}
         <footer className="max-w-4xl mx-auto text-center mt-10 text-xs text-gray-400">
           Signed in as {user?.email} — Data secured with Supabase RLS
         </footer>
       </div>
+
+      {/* ── Mobile FAB — hidden on desktop ── */}
+      <button
+        onClick={() => setSheetOpen(true)}
+        className="fixed bottom-6 right-6 z-30 md:hidden w-14 h-14 rounded-full
+                   shadow-xl flex items-center justify-center text-white
+                   active:scale-95 transition-transform"
+        style={{ background: '#4169E1' }}
+        title="Add expense"
+        aria-label="Add expense"
+      >
+        <Plus size={24} />
+      </button>
+
+      {/* ── Mobile Bottom Sheet ── */}
+      <BottomSheet open={sheetOpen} onClose={() => setSheetOpen(false)}>
+        <AddForm {...addFormProps} />
+      </BottomSheet>
+
+      {/* ── Budget Settings Modal ── */}
+      {budgetOpen && (
+        <BudgetModal
+          workspaceId={activeWorkspace.id}
+          categories={categories}
+          expenses={expenses}
+          onClose={() => setBudgetOpen(false)}
+        />
+      )}
     </>
   )
 }

@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { useAuth } from '../context/AuthContext'
+import { useAuth }  from '../context/AuthContext'
 import { LogIn, UserPlus } from 'lucide-react'
+import KharchaLogo from '../components/KharchaLogo'
 
 export default function AuthPage() {
   const { signIn, signUp } = useAuth()
@@ -48,8 +49,11 @@ export default function AuthPage() {
       <div className="relative z-10 min-h-screen flex items-center justify-center px-4 py-12">
         <div className="glass rounded-4xl p-8 md:p-10 shadow-2xl w-full max-w-md">
           <div className="text-center mb-8">
+            <div className="flex items-center justify-center gap-3 mb-2">
+              <KharchaLogo size={44} />
+            </div>
             <h1 className="text-3xl font-extrabold tracking-tight" style={{ color: '#4169E1' }}>
-              💸 Kharcha Tracker
+              Kharcha Tracker
             </h1>
             <p className="text-sm text-gray-500 mt-2">
               {mode === 'login' ? 'Welcome back' : 'Create your account'}

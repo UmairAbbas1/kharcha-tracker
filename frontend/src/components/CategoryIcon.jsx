@@ -1,5 +1,5 @@
 import {
-  Utensils, Car, Home, Smile, MoreHorizontal,
+  Utensils, Car, Home, Smile, MoreHorizontal, Wallet,
 } from 'lucide-react'
 
 // Maps Supabase icon field (lucide name string) → component
@@ -9,6 +9,7 @@ const iconMap = {
   Home,
   Smile,
   MoreHorizontal,
+  Wallet,
 }
 
 export function categoryIcon(iconName = 'MoreHorizontal', color = '#94a3b8', size = 16) {

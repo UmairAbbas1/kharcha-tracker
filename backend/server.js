@@ -4,6 +4,8 @@ import dotenv     from 'dotenv'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { createClient } from '@supabase/supabase-js'
+import { evaluate }      from './alerts/alertEngine.js'
+import { scanReceipt }  from './ocr/receiptScanner.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 dotenv.config({ path: join(__dirname, '..', '.env.backend') })
@@ -299,9 +301,189 @@ app.delete('/api/workspace/:workspaceId/members/:userId', requireAuth, async (re
   }
 })
 
+// ── POST /api/scan-receipt — OCR a receipt image via Groq ────
+app.post('/api/scan-receipt', requireAuth, async (req, res) => {
+  const { image, categories } = req.body
+
+  if (!image)
+    return res.status(400).json({ success: false, error: 'No image provided' })
+
+  try {
+    const data = await scanReceipt(image, categories || [])
+    res.json({ success: true, data, hint: 'Please verify before saving' })
+  } catch (err) {
+    const status = err.status || 500
+    console.error('[POST /api/scan-receipt]', err.message)
+    res.status(status).json({ success: false, error: err.message })
+  }
+})
+
+// ── DELETE /api/expenses/:id — soft-delete an expense ───────
+app.delete('/api/expenses/:id', requireAuth, async (req, res) => {
+  const { id } = req.params
+
+  if (!id) return res.status(400).json({ success: false, error: 'Expense ID required' })
+
+  try {
+    // Verify the expense belongs to a workspace the user is a member of
+    const { data: expense, error: fetchErr } = await req.supabase
+      .from('expenses')
+      .select('id, workspace_id')
+      .eq('id', id)
+      .is('deleted_at', null)
+      .maybeSingle()
+
+    if (fetchErr) throw fetchErr
+    if (!expense) return res.status(404).json({ success: false, error: 'Expense not found' })
+
+    // Use admin client for the actual update to bypass created_by RLS restriction
+    if (!adminClient)
+      return res.status(503).json({ success: false, error: 'Admin client not configured' })
+
+    const { error: updateErr } = await adminClient
+      .from('expenses')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id)
+
+    if (updateErr) throw updateErr
+
+    res.json({ success: true })
+  } catch (err) {
+    console.error('[DELETE /api/expenses/:id]', err)
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// ── POST /api/expenses — create expense + fire alert engine ──
+app.post('/api/expenses', requireAuth, async (req, res) => {
+  const { workspace_id, category_id, title, amount, date } = req.body
+
+  // Validation
+  if (!workspace_id)
+    return res.status(400).json({ success: false, error: 'workspace_id is required' })
+  if (!category_id)
+    return res.status(400).json({ success: false, error: 'category_id is required' })
+  if (!title?.trim())
+    return res.status(400).json({ success: false, error: 'Title is required' })
+  if (!amount || isNaN(amount) || Number(amount) <= 0)
+    return res.status(400).json({ success: false, error: 'Amount must be a positive number' })
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date))
+    return res.status(400).json({ success: false, error: 'Date must be YYYY-MM-DD' })
+
+  try {
+    // Insert via user-scoped client so RLS applies (workspace membership check)
+    const { data, error } = await req.supabase
+      .from('expenses')
+      .insert({
+        workspace_id,
+        created_by:  req.user.id,
+        category_id,
+        title:       title.trim(),
+        amount:      Number(amount),
+        date,
+      })
+      .select('*, categories(name, icon, color)')
+      .single()
+
+    if (error) throw error
+
+    // ── Respond immediately — do NOT await the alert engine ──
+    res.status(201).json({ success: true, data })
+
+    // ── Fire-and-forget alert evaluation ─────────────────────
+    const month = date.slice(0, 7) // "YYYY-MM"
+    if (adminClient) {
+      // setImmediate ensures the response is flushed before evaluation starts
+      setImmediate(() => {
+        evaluate(adminClient, workspace_id, category_id, month)
+          .catch(err => console.error('[server] alert evaluation error:', err))
+      })
+    }
+  } catch (err) {
+    console.error('[POST /api/expenses]', err)
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// ── DELETE /api/alert-logs — clear stale logs when budget is updated ─
+app.delete('/api/alert-logs', requireAuth, async (req, res) => {
+  const { workspace_id, category_id, month } = req.body
+
+  if (!workspace_id || !month)
+    return res.status(400).json({ success: false, error: 'workspace_id and month required' })
+
+  try {
+    // Verify requester is a member of this workspace
+    const { data: membership } = await req.supabase
+      .from('workspace_members')
+      .select('role')
+      .eq('workspace_id', workspace_id)
+      .eq('user_id', req.user.id)
+      .maybeSingle()
+
+    if (!membership)
+      return res.status(403).json({ success: false, error: 'Not a member of this workspace' })
+
+    // Use admin client to bypass RLS on alert_logs
+    if (!req.adminSupabase)
+      return res.status(503).json({ success: false, error: 'Admin client not configured' })
+
+    const query = req.adminSupabase
+      .from('alert_logs')
+      .delete()
+      .eq('workspace_id', workspace_id)
+      .eq('month', month)
+
+    // category_id === null means workspace-level; omitting it means clear all
+    if (category_id === null) {
+      query.is('category_id', null)
+    } else if (category_id !== undefined) {
+      query.eq('category_id', category_id)
+    }
+    // if category_id is omitted from body → clears all logs for workspace+month
+
+    const { error } = await query
+
+    if (error) throw error
+
+    res.json({ success: true })
+  } catch (err) {
+    console.error('[DELETE /api/alert-logs]', err)
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// ── GET /api/alert-logs — fetch alert history for a workspace ─
+app.get('/api/alert-logs', requireAuth, async (req, res) => {
+  const { workspace_id, month } = req.query
+
+  if (!workspace_id)
+    return res.status(400).json({ success: false, error: 'workspace_id is required' })
+
+  try {
+    const query = req.supabase
+      .from('alert_logs')
+      .select('*, categories(name, color)')
+      .eq('workspace_id', workspace_id)
+      .order('sent_at', { ascending: false })
+
+    if (month) query.eq('month', month)
+
+    const { data, error } = await query
+
+    if (error) throw error
+
+    res.json({ success: true, data })
+  } catch (err) {
+    console.error('[GET /api/alert-logs]', err)
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
 // ── Start ─────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`🚀 Kharcha Tracker API v2 → http://localhost:${PORT}`)
   console.log(`   Supabase: ${supabaseUrl}`)
-  console.log(`   Routes: /health  /api/stats  /api/budget-status  /api/invite`)
+  console.log(`   Routes: /health  /api/expenses  /api/scan-receipt  /api/stats  /api/budget-status  /api/alert-logs  /api/invite`)
+  console.log(`   Alert engine: email=ON  whatsapp=${process.env.WHATSAPP_ENABLED === 'true' ? 'ON' : 'OFF (flagged)'}`)
 })

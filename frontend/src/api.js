@@ -1,5 +1,14 @@
 import { supabase } from './lib/supabase'
 
+const BACKEND = 'http://localhost:5000'
+
+// Helper: get current session token for backend calls
+async function getToken() {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) throw new Error('Not authenticated')
+  return session.access_token
+}
+
 // ── Expenses ──────────────────────────────────────────────────────────
 export async function getExpenses(workspaceId) {
   const { data, error } = await supabase
@@ -14,32 +23,40 @@ export async function getExpenses(workspaceId) {
   return { success: true, data }
 }
 
+// Routes through backend so the alert engine can fire after insert
 export async function createExpense(workspaceId, expense) {
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Not authenticated')
+  const token = await getToken()
 
-  const { data, error } = await supabase
-    .from('expenses')
-    .insert({
+  const res = await fetch(`${BACKEND}/api/expenses`, {
+    method:  'POST',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
       workspace_id: workspaceId,
-      created_by: user.id,
       ...expense,
-    })
-    .select('*, categories(name, icon, color)')
-    .single()
+    }),
+  })
 
-  if (error) throw error
-  return { success: true, data }
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error || 'Failed to create expense')
+  return json
 }
 
 export async function deleteExpense(id) {
-  // Soft delete — set deleted_at
-  const { error } = await supabase
-    .from('expenses')
-    .update({ deleted_at: new Date().toISOString() })
-    .eq('id', id)
+  // Route through backend so the service-role client bypasses RLS.
+  // Direct Supabase client soft-delete fails when created_by != auth.uid()
+  // (e.g. migrated expenses or expenses added by other workspace members).
+  const token = await getToken()
 
-  if (error) throw error
+  const res = await fetch(`${BACKEND}/api/expenses/${id}`, {
+    method:  'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.error || 'Failed to delete expense')
   return { success: true }
 }
 
@@ -67,18 +84,128 @@ export async function createCategory(workspaceId, category) {
   return { success: true, data }
 }
 
-// ── Stats (via backend for complex aggregation) ──────────────────────
+// ── Stats (via backend for complex aggregation) ───────────────────────
 export async function getStats(workspaceId) {
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) throw new Error('Not authenticated')
+  const token = await getToken()
 
-  const res = await fetch(`http://localhost:5000/api/stats?workspace_id=${workspaceId}`, {
-    headers: { Authorization: `Bearer ${session.access_token}` }
+  const res = await fetch(`${BACKEND}/api/stats?workspace_id=${workspaceId}`, {
+    headers: { Authorization: `Bearer ${token}` },
   })
 
   if (!res.ok) {
     const err = await res.json()
     throw new Error(err.error || 'Failed to fetch stats')
+  }
+
+  return res.json()
+}
+
+// ── Receipt OCR ───────────────────────────────────────────────────────
+export async function scanReceipt(dataUri, categories = []) {
+  const token = await getToken()
+
+  const res = await fetch(`${BACKEND}/api/scan-receipt`, {
+    method:  'POST',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({ image: dataUri, categories }),
+  })
+
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error || 'Scan failed')
+  return json.data
+}
+
+// ── Budgets ───────────────────────────────────────────────────────────
+
+export async function getBudgets(workspaceId, month) {
+  const query = supabase
+    .from('budgets')
+    .select('*')
+    .eq('workspace_id', workspaceId)
+
+  if (month) query.eq('month', month)
+
+  const { data, error } = await query
+  if (error) throw error
+  return { success: true, data }
+}
+
+/**
+ * Insert or update a budget row.
+ * Clears alert_logs for this scope+month so stale banners don't reappear
+ * after the budget amount changes.
+ */
+export async function upsertBudget(workspaceId, categoryId, month, amount) {
+  const { data, error } = await supabase
+    .from('budgets')
+    .upsert(
+      {
+        workspace_id: workspaceId,
+        category_id:  categoryId ?? null,
+        month,
+        amount:       Number(amount),
+      },
+      { onConflict: 'workspace_id,category_id,month' }
+    )
+    .select()
+    .single()
+
+  if (error) throw error
+
+  // Clear stale alert_logs so the engine re-evaluates against the new amount
+  // and banners don't show old threshold crossings that no longer apply.
+  const token = await getToken()
+  await fetch(`${BACKEND}/api/alert-logs`, {
+    method:  'DELETE',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      workspace_id: workspaceId,
+      category_id:  categoryId ?? null,
+      month,
+    }),
+  }).catch(err => console.warn('[upsertBudget] failed to clear alert logs:', err))
+
+  return { success: true, data }
+}
+
+export async function deleteBudget(workspaceId, categoryId, month) {
+  const query = supabase
+    .from('budgets')
+    .delete()
+    .eq('workspace_id', workspaceId)
+    .eq('month', month)
+
+  if (categoryId === null) {
+    query.is('category_id', null)
+  } else {
+    query.eq('category_id', categoryId)
+  }
+
+  const { error } = await query
+  if (error) throw error
+  return { success: true }
+}
+
+// ── Alert logs (budget warning banners) ───────────────────────────────
+export async function getAlertLogs(workspaceId, month) {
+  const token = await getToken()
+
+  const params = new URLSearchParams({ workspace_id: workspaceId })
+  if (month) params.set('month', month)
+
+  const res = await fetch(`${BACKEND}/api/alert-logs?${params}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || 'Failed to fetch alert logs')
   }
 
   return res.json()
