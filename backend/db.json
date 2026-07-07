@@ -63,7 +63,23 @@
       "category": "Transport",
       "date": "2026-07-06",
       "created_at": "2026-07-06T14:29:50.398Z"
+    },
+    {
+      "id": 11,
+      "title": "Electricity bills",
+      "amount": 5000,
+      "category": "Food",
+      "date": "2026-07-06",
+      "created_at": "2026-07-07T07:01:20.808Z"
+    },
+    {
+      "id": 12,
+      "title": "uber driver",
+      "amount": 500,
+      "category": "Transport",
+      "date": "2026-07-07",
+      "created_at": "2026-07-07T07:01:56.414Z"
     }
   ],
-  "nextId": 11
+  "nextId": 13
 }

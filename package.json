@@ -1,0 +1,16 @@
+{
+  "name": "kharcha-tracker-root",
+  "version": "2.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "backend":  "npm run dev --prefix backend",
+    "frontend": "npm run dev --prefix frontend",
+    "migrate":  "node migrate-to-supabase.js",
+    "install:all": "npm install --prefix backend && npm install --prefix frontend"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.43.4",
+    "dotenv": "16.4.5"
+  }
+}
