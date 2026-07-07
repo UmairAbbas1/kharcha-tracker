@@ -8,7 +8,7 @@
 
 import Groq from 'groq-sdk'
 
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024 // 5 MB
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024 // 4 MB (Llama 4 Scout base64 limit)
 const ALLOWED_TYPES   = ['image/jpeg', 'image/png', 'image/webp']
 
 // Lazy-init client so dotenv loads first
@@ -28,7 +28,7 @@ function getGroq() {
 export async function scanReceipt(dataUri, categories = []) {
   // ── Validate ──────────────────────────────────────────────
   if (!dataUri || typeof dataUri !== 'string') {
-    throw new Object.assign(new Error('No image provided'), { status: 400 })
+    throw Object.assign(new Error('No image provided'), { status: 400 })
   }
 
   const mimeMatch = dataUri.match(/^data:([^;]+);base64,/)
@@ -60,39 +60,44 @@ export async function scanReceipt(dataUri, categories = []) {
     ? categories.join(', ')
     : 'Food, Transport, Rent, Fun, Other'
 
-  const systemPrompt = `You are a receipt parser. Extract expense data from the receipt image.
-Return ONLY valid JSON — no markdown, no code fences, no explanation.
+  const systemPrompt = `You are a receipt and transaction parser for a Pakistani expense tracker.
+Extract expense data from the image and return ONLY a valid JSON object.
+No markdown, no code fences, no explanation — raw JSON only.
+
 Schema: {"amount": number|null, "category": string|null, "vendor": string|null, "date": "YYYY-MM-DD"|null}
 
 Rules:
-- amount: total amount paid as a plain number (no currency symbol, no commas)
-- category: pick the closest match from this list ONLY: ${categoryList}
-- vendor: business name exactly as printed on receipt
-- date: transaction date in YYYY-MM-DD format
-- If a field is unclear, illegible, or absent, return null for that field — never guess`
+- amount: the final total paid as a plain number (e.g. 1000, not "Rs.1000" or "1,000")
+  Look for: "Total Amount", "Grand Total", "Amount", "Rs.", "PKR"
+  For mobile wallet receipts (Easypaisa, JazzCash, etc): use the "Total Amount" or "Amount" field
+- category: pick the CLOSEST match from this list ONLY: ${categoryList}
+  Mobile money transfers → Other
+  Food/restaurants → Food
+  Transport/ride-hailing → Transport
+  Utilities/bills → Other
+  Rent/property → Rent
+  Entertainment → Fun
+- vendor: the business or app name (e.g. "easypaisa", "KFC", "Careem")
+- date: transaction date in YYYY-MM-DD format (convert "26 June 2024" → "2024-06-26")
+- Use null for any field that is truly absent — never fabricate data`
 
-  // ── Call Groq ─────────────────────────────────────────────
+  // ── Call Groq with JSON mode ───────────────────────────────
   const groq = getGroq()
 
   const response = await groq.chat.completions.create({
-    model: 'llama-3.2-90b-vision-preview',
+    model:    'meta-llama/llama-4-scout-17b-16e-instruct',
     messages: [
       {
-        role: 'user',
+        role:    'user',
         content: [
-          {
-            type: 'text',
-            text: systemPrompt,
-          },
-          {
-            type:      'image_url',
-            image_url: { url: dataUri },
-          },
+          { type: 'text',      text: systemPrompt },
+          { type: 'image_url', image_url: { url: dataUri } },
         ],
       },
     ],
-    max_tokens:   256,
-    temperature:  0,   // deterministic — we want facts not creativity
+    response_format: { type: 'json_object' },  // forces valid JSON output
+    max_tokens:      512,
+    temperature:     0,
   })
 
   const raw = response.choices?.[0]?.message?.content?.trim()

@@ -33,7 +33,7 @@ const app  = express()
 const PORT = process.env.PORT || 5000
 
 app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:4173'] }))
-app.use(express.json())
+app.use(express.json({ limit: '10mb' }))  // large enough for base64 receipt images
 
 // ── Auth middleware ───────────────────────────────────────────
 // Validates the Supabase JWT from the Authorization header
@@ -310,10 +310,11 @@ app.post('/api/scan-receipt', requireAuth, async (req, res) => {
 
   try {
     const data = await scanReceipt(image, categories || [])
+    console.log('[scan-receipt] extracted:', data)
     res.json({ success: true, data, hint: 'Please verify before saving' })
   } catch (err) {
     const status = err.status || 500
-    console.error('[POST /api/scan-receipt]', err.message)
+    console.error('[POST /api/scan-receipt] error:', err.message)
     res.status(status).json({ success: false, error: err.message })
   }
 })
