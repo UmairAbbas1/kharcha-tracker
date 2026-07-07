@@ -1,0 +1,69 @@
+{
+  "expenses": [
+    {
+      "id": 1,
+      "title": "Chicken Biryani 🍛",
+      "amount": 350,
+      "category": "Food",
+      "date": "2026-07-06",
+      "created_at": "2026-07-06T13:51:18.855Z"
+    },
+    {
+      "id": 2,
+      "title": "Careem Ride 🚗",
+      "amount": 220,
+      "category": "Transport",
+      "date": "2026-07-05",
+      "created_at": "2026-07-06T13:51:18.855Z"
+    },
+    {
+      "id": 3,
+      "title": "Hostel Rent 🏠",
+      "amount": 8500,
+      "category": "Rent",
+      "date": "2026-07-04",
+      "created_at": "2026-07-06T13:51:18.855Z"
+    },
+    {
+      "id": 4,
+      "title": "Cinema Ticket 🎬",
+      "amount": 650,
+      "category": "Fun",
+      "date": "2026-07-03",
+      "created_at": "2026-07-06T13:51:18.855Z"
+    },
+    {
+      "id": 5,
+      "title": "Doodh Patti Chai ☕",
+      "amount": 60,
+      "category": "Food",
+      "date": "2026-07-02",
+      "created_at": "2026-07-06T13:51:18.855Z"
+    },
+    {
+      "id": 6,
+      "title": "Jazz Mobile Load 📱",
+      "amount": 300,
+      "category": "Other",
+      "date": "2026-07-01",
+      "created_at": "2026-07-06T13:51:18.855Z"
+    },
+    {
+      "id": 9,
+      "title": "food panda",
+      "amount": 450,
+      "category": "Food",
+      "date": "2026-07-06",
+      "created_at": "2026-07-06T14:28:50.508Z"
+    },
+    {
+      "id": 10,
+      "title": "travelling",
+      "amount": 4000,
+      "category": "Transport",
+      "date": "2026-07-06",
+      "created_at": "2026-07-06T14:29:50.398Z"
+    }
+  ],
+  "nextId": 11
+}

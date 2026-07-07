@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Page background ────────────────────────────────────────────────── */
+body {
+  background: linear-gradient(135deg, #F5F7FF 0%, #FBF0F7 50%, #FDF3F7 100%);
+  min-height: 100vh;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+/* ── Glassmorphism card ─────────────────────────────────────────────── */
+.glass {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+}
+
+.glass-hero {
+  background: rgba(65, 105, 225, 0.93);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+/* ── Ambient blobs ──────────────────────────────────────────────────── */
+.blob {
+  position: fixed;
+  border-radius: 9999px;
+  filter: blur(90px);
+  opacity: 0.15;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Hover-reveal delete button ─────────────────────────────────────── */
+.expense-row .del-btn {
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+.expense-row:hover .del-btn {
+  opacity: 1;
+}
+
+/* ── Custom scrollbar ───────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #c7d2fe; border-radius: 99px; }
+
+/* ── Input focus ring ───────────────────────────────────────────────── */
+input:focus, select:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px #4169E133;
+}

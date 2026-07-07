@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kharcha Tracker 💸</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            royal: '#4169E1',
+            'royal-dark': '#2f52c8',
+            'royal-light': '#6b8bff',
+            pink: {
+              accent: '#F7A8C4',
+              'accent-dark': '#f47fab',
+            }
+          },
+          borderRadius: {
+            '3xl': '1.5rem',
+            '4xl': '2rem',
+          },
+          backdropBlur: {
+            xs: '2px',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background: linear-gradient(135deg, #F5F7FF 0%, #FBF0F7 50%, #FDF3F7 100%);
+      min-height: 100vh;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    }
+    .glass {
+      background: rgba(255, 255, 255, 0.72);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.5);
+    }
+    .glass-dark {
+      background: rgba(65, 105, 225, 0.92);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255,255,255,0.18);
+    }
+    .blob {
+      position: fixed;
+      border-radius: 9999px;
+      filter: blur(80px);
+      opacity: 0.18;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .expense-row:hover .delete-btn { opacity: 1; }
+    .delete-btn { opacity: 0; transition: opacity 0.2s; }
+    /* custom scrollbar */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #c7d2fe; border-radius: 99px; }
+    input, select {
+      outline: none;
+    }
+    input:focus, select:focus {
+      box-shadow: 0 0 0 2px #4169E133;
+    }
+    .chart-tooltip {
+      background: rgba(255,255,255,0.95) !important;
+      border: 1px solid #e0e7ff !important;
+      border-radius: 12px !important;
+      box-shadow: 0 4px 24px #4169e120 !important;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- Blob decorations -->
+  <div class="blob" style="width:420px;height:420px;background:#4169E1;top:-80px;left:-100px;"></div>
+  <div class="blob" style="width:380px;height:380px;background:#F7A8C4;bottom:-60px;right:-80px;"></div>
+  <div class="blob" style="width:250px;height:250px;background:#a5b4fc;top:40%;left:60%;"></div>
+
+  <script type="module">
+    import { createElement as h, useState, useMemo, useCallback } from 'https://esm.sh/react@18';
+    import { createRoot } from 'https://esm.sh/react-dom@18/client';
+    import {
+      PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
+      BarChart, Bar, XAxis, YAxis, CartesianGrid
+    } from 'https://esm.sh/recharts@2';
+
+    // ── Icons (inline SVG via lucide paths) ──────────────────────────────────
+    const Icon = ({ d, size = 18, color = 'currentColor', strokeWidth = 2, ...rest }) =>
+      h('svg', { xmlns: 'http://www.w3.org/2000/svg', width: size, height: size,
+        viewBox: '0 0 24 24', fill: 'none', stroke: color,
+        strokeWidth, strokeLinecap: 'round', strokeLinejoin: 'round', ...rest },
+        ...(Array.isArray(d) ? d : [d]).map((p, i) => h('path', { key: i, d: p }))
+      );
+
+    const icons = {
+      Food:      ['M3 11l19-9-9 19-2-8-8-2z'],
+      Transport: ['M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v10a2 2 0 01-2 2h-2','M16 17H8','M12 3v4'],
+      Rent:      ['M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z','M9 22V12h6v10'],
+      Fun:       ['M12 2a10 10 0 100 20A10 10 0 0012 2z','M8 14s1.5 2 4 2 4-2 4-2','M9 9h.01','M15 9h.01'],
+      Other:     ['M12 22C6.48 22 2 17.52 2 12S6.48 2 12 2s10 4.48 10 10-4.48 10-10 10z','M12 8v4','M12 16h.01'],
+      trash:     ['M3 6h18','M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2'],
+      plus:      ['M12 5v14','M5 12h14'],
+      wallet:    ['M21 12V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2h14a2 2 0 002-2v-5','M16 12a2 2 0 000-4 2 2 0 000 4z'],
+      chart:     ['M18 20V10','M12 20V4','M6 20v-6'],
+      receipt:   ['M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1z','M9 7h6','M9 11h6','M9 15h4'],
+    };
+
+    // ── Data ─────────────────────────────────────────────────────────────────
+    const CATEGORIES = ['Food', 'Transport', 'Rent', 'Fun', 'Other'];
+    const CAT_COLORS = {
+      Food: '#4169E1',
+      Transport: '#F7A8C4',
+      Rent: '#818cf8',
+      Fun: '#fb923c',
+      Other: '#34d399',
+    };
+
+    const today = new Date();
+    const fmt = (daysAgo) => {
+      const d = new Date(today);
+      d.setDate(d.getDate() - daysAgo);
+      return d.toISOString().split('T')[0];
+    };
+
+    const INITIAL_EXPENSES = [
+      { id: 1, title: 'Chicken Biryani 🍛',   amount: 350,   category: 'Food',      date: fmt(0) },
+      { id: 2, title: 'Careem Ride 🚗',         amount: 220,   category: 'Transport', date: fmt(1) },
+      { id: 3, title: 'Hostel Rent 🏠',          amount: 8500,  category: 'Rent',      date: fmt(2) },
+      { id: 4, title: 'Cinema Ticket 🎬',        amount: 650,   category: 'Fun',       date: fmt(3) },
+      { id: 5, title: 'Doodh Patti Chai ☕',    amount: 60,    category: 'Food',      date: fmt(4) },
+      { id: 6, title: 'Jazz Mobile Load 📱',    amount: 300,   category: 'Other',     date: fmt(5) },
+    ];
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+    const pkr = (n) => `Rs ${n.toLocaleString('en-PK')}`;
+
+    // ── Sub-components ────────────────────────────────────────────────────────
+
+    // Balance card
+    const BalanceCard = ({ total, count }) =>
+      h('div', { className: 'glass-dark rounded-3xl p-6 md:p-8 text-white shadow-2xl relative overflow-hidden' },
+        // decorative circles
+        h('div', { className: 'absolute -top-8 -right-8 w-36 h-36 rounded-full bg-white opacity-5' }),
+        h('div', { className: 'absolute -bottom-10 -left-10 w-44 h-44 rounded-full bg-white opacity-5' }),
+        h('div', { className: 'relative z-10' },
+          h('div', { className: 'flex items-center gap-2 mb-1 opacity-80' },
+            h(Icon, { d: icons.wallet, size: 16, color: '#F7A8C4' }),
+            h('span', { className: 'text-sm font-medium tracking-wide uppercase' }, 'Total Kharcha')
+          ),
+          h('div', { className: 'text-4xl md:text-5xl font-bold tracking-tight mt-1' }, pkr(total)),
+          h('div', { className: 'mt-3 inline-flex items-center gap-1.5 bg-white/10 rounded-full px-3 py-1 text-xs font-medium' },
+            h(Icon, { d: icons.receipt, size: 13 }),
+            `${count} transactions`
+          )
+        )
+      );
+
+    // Category badge
+    const CatBadge = ({ cat }) =>
+      h('span', {
+        className: 'inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full',
+        style: { background: CAT_COLORS[cat] + '22', color: CAT_COLORS[cat] }
+      },
+        h(Icon, { d: icons[cat] || icons.Other, size: 11, color: CAT_COLORS[cat] }),
+        cat
+      );
+
+    // Add Expense Form
+    const AddForm = ({ onAdd }) => {
+      const [title, setTitle] = useState('');
+      const [amount, setAmount] = useState('');
+      const [category, setCategory] = useState('Food');
+
+      const submit = (e) => {
+        e.preventDefault();
+        if (!title.trim() || !amount || isNaN(+amount) || +amount <= 0) return;
+        onAdd({ title: title.trim(), amount: +amount, category, date: new Date().toISOString().split('T')[0] });
+        setTitle(''); setAmount('');
+      };
+
+      return h('div', { className: 'glass rounded-3xl p-6 shadow-lg' },
+        h('h2', { className: 'text-base font-bold text-gray-700 mb-4 flex items-center gap-2' },
+          h(Icon, { d: icons.plus, size: 16, color: '#4169E1' }),
+          'Add Expense'
+        ),
+        h('form', { onSubmit: submit, className: 'flex flex-col gap-3' },
+          h('input', {
+            value: title, onChange: e => setTitle(e.target.value),
+            placeholder: 'What did you spend on? (e.g. Biryani)',
+            className: 'w-full rounded-2xl border border-blue-100 bg-white/60 px-4 py-2.5 text-sm text-gray-700 placeholder-gray-400 transition focus:border-blue-300',
+            required: true
+          }),
+          h('div', { className: 'flex gap-2' },
+            h('div', { className: 'relative flex-1' },
+              h('span', { className: 'absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-semibold' }, 'Rs'),
+              h('input', {
+                value: amount, onChange: e => setAmount(e.target.value),
+                type: 'number', min: '1', step: '1',
+                placeholder: '0',
+                className: 'w-full rounded-2xl border border-blue-100 bg-white/60 pl-9 pr-4 py-2.5 text-sm text-gray-700 placeholder-gray-400 transition focus:border-blue-300',
+                required: true
+              })
+            ),
+            h('select', {
+              value: category, onChange: e => setCategory(e.target.value),
+              className: 'rounded-2xl border border-blue-100 bg-white/60 px-3 py-2.5 text-sm text-gray-700 transition focus:border-blue-300 cursor-pointer'
+            },
+              ...CATEGORIES.map(c => h('option', { key: c, value: c }, c))
+            )
+          ),
+          h('button', {
+            type: 'submit',
+            className: 'w-full bg-royal hover:bg-royal-dark active:scale-95 text-white font-semibold rounded-2xl py-2.5 text-sm transition-all duration-150 flex items-center justify-center gap-2 shadow-md',
+            style: { background: '#4169E1' }
+          },
+            h(Icon, { d: icons.plus, size: 16, color: 'white' }),
+            'Add Kharcha'
+          )
+        )
+      );
+    };
+
+    // Custom tooltip for pie
+    const PieTooltip = ({ active, payload }) => {
+      if (!active || !payload?.length) return null;
+      const { name, value } = payload[0];
+      return h('div', { className: 'chart-tooltip px-3 py-2 text-xs font-semibold text-gray-700' },
+        h('span', { style: { color: CAT_COLORS[name] } }, name),
+        h('span', { className: 'ml-2 text-gray-500' }, pkr(value))
+      );
+    };
+
+    // Pie Chart card
+    const SpendPie = ({ expenses }) => {
+      const data = useMemo(() => {
+        const map = {};
+        expenses.forEach(e => { map[e.category] = (map[e.category] || 0) + e.amount; });
+        return Object.entries(map).map(([name, value]) => ({ name, value }));
+      }, [expenses]);
+
+      if (!data.length) return null;
+
+      return h('div', { className: 'glass rounded-3xl p-6 shadow-lg' },
+        h('h2', { className: 'text-base font-bold text-gray-700 mb-4 flex items-center gap-2' },
+          h(Icon, { d: icons.chart, size: 16, color: '#4169E1' }),
+          'Spend by Category'
+        ),
+        h(ResponsiveContainer, { width: '100%', height: 220 },
+          h(PieChart, {},
+            h(Pie, {
+              data, cx: '50%', cy: '50%',
+              innerRadius: 55, outerRadius: 88,
+              paddingAngle: 3, dataKey: 'value'
+            },
+              ...data.map(entry => h(Cell, { key: entry.name, fill: CAT_COLORS[entry.name] || '#94a3b8' }))
+            ),
+            h(Tooltip, { content: h(PieTooltip) })
+          )
+        ),
+        h('div', { className: 'flex flex-wrap gap-2 mt-2' },
+          ...data.map(({ name, value }) =>
+            h('div', { key: name, className: 'flex items-center gap-1.5 text-xs text-gray-600' },
+              h('span', { className: 'w-2.5 h-2.5 rounded-full inline-block', style: { background: CAT_COLORS[name] } }),
+              h('span', { className: 'font-medium' }, name),
+              h('span', { className: 'text-gray-400' }, pkr(value))
+            )
+          )
+        )
+      );
+    };
+
+    // Bar chart tooltip
+    const BarTooltip = ({ active, payload, label }) => {
+      if (!active || !payload?.length) return null;
+      return h('div', { className: 'chart-tooltip px-3 py-2 text-xs font-semibold text-gray-700' },
+        h('div', { className: 'text-gray-400 mb-0.5' }, label),
+        h('div', { style: { color: '#4169E1' } }, pkr(payload[0].value))
+      );
+    };
+
+    // Bar Chart card
+    const SpendBar = ({ expenses }) => {
+      const data = useMemo(() => {
+        const map = {};
+        expenses.forEach(e => {
+          const d = e.date.slice(5); // MM-DD
+          map[d] = (map[d] || 0) + e.amount;
+        });
+        return Object.entries(map)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .slice(-7)
+          .map(([date, amount]) => ({ date, amount }));
+      }, [expenses]);
+
+      if (!data.length) return null;
+
+      return h('div', { className: 'glass rounded-3xl p-6 shadow-lg' },
+        h('h2', { className: 'text-base font-bold text-gray-700 mb-4 flex items-center gap-2' },
+          h(Icon, { d: icons.chart, size: 16, color: '#F7A8C4' }),
+          'Daily Spend (last 7 days)'
+        ),
+        h(ResponsiveContainer, { width: '100%', height: 200 },
+          h(BarChart, { data, margin: { top: 4, right: 4, left: 0, bottom: 0 } },
+            h(CartesianGrid, { strokeDasharray: '3 3', stroke: '#e0e7ff', vertical: false }),
+            h(XAxis, { dataKey: 'date', tick: { fontSize: 11, fill: '#94a3b8' }, axisLine: false, tickLine: false }),
+            h(YAxis, { tick: { fontSize: 10, fill: '#94a3b8' }, axisLine: false, tickLine: false,
+              tickFormatter: v => v >= 1000 ? `${v/1000}k` : v }),
+            h(Tooltip, { content: h(BarTooltip), cursor: { fill: '#4169E108' } }),
+            h(Bar, { dataKey: 'amount', fill: '#4169E1', radius: [6, 6, 0, 0], maxBarSize: 40 })
+          )
+        )
+      );
+    };
+
+    // Expense list item
+    const ExpenseItem = ({ expense, onDelete }) => {
+      const dateLabel = useMemo(() => {
+        const today = new Date().toISOString().split('T')[0];
+        const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+        if (expense.date === today) return 'Today';
+        if (expense.date === yesterday) return 'Yesterday';
+        return expense.date.slice(5).replace('-', '/');
+      }, [expense.date]);
+
+      return h('div', { className: 'expense-row flex items-center gap-3 py-3 px-1 border-b border-blue-50 last:border-0 group' },
+        h('div', {
+          className: 'w-9 h-9 rounded-2xl flex items-center justify-center flex-shrink-0',
+          style: { background: CAT_COLORS[expense.category] + '1a' }
+        },
+          h(Icon, { d: icons[expense.category] || icons.Other, size: 17, color: CAT_COLORS[expense.category] })
+        ),
+        h('div', { className: 'flex-1 min-w-0' },
+          h('div', { className: 'text-sm font-semibold text-gray-800 truncate' }, expense.title),
+          h('div', { className: 'flex items-center gap-2 mt-0.5' },
+            h(CatBadge, { cat: expense.category }),
+            h('span', { className: 'text-xs text-gray-400' }, dateLabel)
+          )
+        ),
+        h('div', { className: 'flex items-center gap-2 flex-shrink-0' },
+          h('span', { className: 'text-sm font-bold', style: { color: '#4169E1' } }, pkr(expense.amount)),
+          h('button', {
+            onClick: () => onDelete(expense.id),
+            className: 'delete-btn w-7 h-7 rounded-full flex items-center justify-center hover:bg-red-50 transition-colors',
+            title: 'Delete'
+          },
+            h(Icon, { d: icons.trash, size: 14, color: '#f87171' })
+          )
+        )
+      );
+    };
+
+    // Recent Expenses card
+    const RecentExpenses = ({ expenses, onDelete }) =>
+      h('div', { className: 'glass rounded-3xl p-6 shadow-lg' },
+        h('h2', { className: 'text-base font-bold text-gray-700 mb-1 flex items-center gap-2' },
+          h(Icon, { d: icons.receipt, size: 16, color: '#4169E1' }),
+          'Recent Expenses',
+          h('span', {
+            className: 'ml-auto text-xs font-medium text-gray-400 bg-blue-50 rounded-full px-2 py-0.5'
+          }, expenses.length)
+        ),
+        expenses.length === 0
+          ? h('div', { className: 'text-center py-8 text-gray-400 text-sm' },
+              h('div', { className: 'text-3xl mb-2' }, '🪙'),
+              'No expenses yet. Add your first kharcha!'
+            )
+          : h('div', { className: 'mt-2 max-h-72 overflow-y-auto pr-1' },
+              ...expenses
+                .slice()
+                .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id)
+                .map(exp => h(ExpenseItem, { key: exp.id, expense: exp, onDelete }))
+            )
+      );
+
+    // ── Main App ──────────────────────────────────────────────────────────────
+    let nextId = INITIAL_EXPENSES.length + 1;
+
+    const App = () => {
+      const [expenses, setExpenses] = useState(INITIAL_EXPENSES);
+
+      const handleAdd = useCallback((exp) => {
+        setExpenses(prev => [...prev, { ...exp, id: nextId++ }]);
+      }, []);
+
+      const handleDelete = useCallback((id) => {
+        setExpenses(prev => prev.filter(e => e.id !== id));
+      }, []);
+
+      const total = useMemo(() => expenses.reduce((s, e) => s + e.amount, 0), [expenses]);
+
+      return h('div', { className: 'relative z-10 min-h-screen px-4 py-8 md:py-12' },
+        // Header
+        h('header', { className: 'text-center mb-8' },
+          h('h1', { className: 'text-3xl md:text-4xl font-extrabold tracking-tight', style: { color: '#4169E1' } },
+            '💸 Kharcha Tracker'
+          ),
+          h('p', { className: 'text-sm text-gray-400 mt-1' }, 'Apna kharch track karo — ek baar mein')
+        ),
+
+        h('div', { className: 'max-w-4xl mx-auto' },
+          // Balance card — full width
+          h('div', { className: 'mb-5' },
+            h(BalanceCard, { total, count: expenses.length })
+          ),
+
+          // Two-column grid on md+
+          h('div', { className: 'grid grid-cols-1 md:grid-cols-2 gap-5' },
+
+            // Left column
+            h('div', { className: 'flex flex-col gap-5' },
+              h(AddForm, { onAdd: handleAdd }),
+              h(SpendPie, { expenses })
+            ),
+
+            // Right column
+            h('div', { className: 'flex flex-col gap-5' },
+              h(SpendBar, { expenses }),
+              h(RecentExpenses, { expenses, onDelete: handleDelete })
+            )
+          )
+        ),
+
+        // Footer
+        h('footer', { className: 'text-center mt-10 text-xs text-gray-400' },
+          'Made with ❤️ — data lives in your browser only'
+        )
+      );
+    };
+
+    createRoot(document.getElementById('root')).render(h(App));
+  </script>
+</body>
+</html>
