@@ -1,0 +1,320 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{multirow}
+
+\definecolor{headerblue}{RGB}{20,60,110}
+\definecolor{phasegreen}{RGB}{22,163,74}
+\definecolor{phaseorange}{RGB}{234,88,12}
+\definecolor{phasepurple}{RGB}{109,40,217}
+\definecolor{lightgray}{RGB}{245,245,245}
+
+\titleformat{\section}{\large\bfseries\color{headerblue}}{\thesection}{1em}{}
+\titleformat{\subsection}{\normalsize\bfseries\color{phasepurple}}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{1em}{}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{Kharcha Tracker — R\&D Roadmap v2}
+\fancyhead[R]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\hypersetup{colorlinks=true, linkcolor=headerblue, urlcolor=headerblue}
+
+\title{%
+  \textbf{\Large Kharcha Tracker} \\[4pt]
+  \large R\&D Roadmap v2: Completed Phases \& Next Research Directions
+}
+\author{Umair Abbas \\ AI Engineering Intern}
+\date{\today}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\begin{document}
+
+\maketitle
+\thispagestyle{empty}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{Executive Summary}
+
+Kharcha Tracker has progressed through three planned phases of development,
+growing from a single-user JSON-based demo into a functional multi-tenant SaaS
+prototype. All three phases have been completed and validated locally on a
+zero-cost infrastructure stack. This document records what was built, what was
+learned during implementation, and proposes new research directions for the next
+iteration — including AI-driven insights, automation pipelines, and a path
+toward a commercially viable product.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Completed Work}
+
+\subsection*{Phase 1 — SaaS Foundation \textnormal{\small\color{phasegreen}(Complete)}}
+
+\begin{itemize}[leftmargin=1.2cm]
+  \item Migrated from \texttt{lowdb} (local JSON) to Supabase PostgreSQL with
+        row-level security (RLS) for full tenant isolation.
+  \item Implemented Supabase JWT authentication — email/password sign-up and
+        login, with session persistence via the Supabase client SDK.
+  \item Introduced \texttt{workspace\_id} foreign keys on all tables
+        (\texttt{expenses}, \texttt{categories}, \texttt{budgets}) so each user's
+        data is isolated by workspace.
+  \item Defined two roles: \textbf{Owner} (full control) and \textbf{Member}
+        (read/write expenses, read budgets). Enforced via RLS policies.
+  \item Auto-provisioning: a Supabase trigger creates a default workspace and
+        seeds five default categories on every new user sign-up.
+  \item Multi-workspace switching in the UI — users can belong to more than one
+        workspace and switch context without re-authenticating.
+\end{itemize}
+
+\textbf{Key finding:} Supabase RLS is powerful but the interaction between
+\texttt{auth.uid()} and service-role clients requires careful separation. All
+alert and deduplication logic was moved to the backend with the service-role key
+so it could bypass RLS safely without exposing elevated privileges to the
+browser.
+
+\subsection*{Phase 2 — Budget Alert Engine \textnormal{\small\color{phasegreen}(Complete)}}
+
+\begin{itemize}[leftmargin=1.2cm]
+  \item Event-driven evaluation on every new expense: category-level and
+        workspace-level budgets are checked independently.
+  \item Three thresholds per budget per month: 80\%, 90\%, 100\%.
+        Each combination of \texttt{(workspace\_id, category\_id, month, threshold)}
+        fires at most once, enforced by the \texttt{alert\_logs} table with a
+        \texttt{UNIQUE NULLS NOT DISTINCT} constraint.
+  \item Alert dispatch is fire-and-forget (\texttt{setImmediate}) so it never
+        blocks the HTTP response to the expense creation request.
+  \item Email delivery via Resend SDK — rich HTML template with workspace name,
+        category, spend vs.\ limit, progress bar, and dashboard link.
+  \item WhatsApp channel built and feature-flagged
+        (\texttt{WHATSAPP\_ENABLED=false}) pending Meta template approval.
+  \item A \texttt{public.profiles} table stores optional WhatsApp numbers
+        (E.164 format) per user. The \texttt{handle\_new\_user} trigger
+        auto-inserts a profile row on sign-up.
+  \item Frontend budget banner: shows only the \emph{highest} threshold crossed
+        per category (not all three simultaneously). Banners clear immediately
+        when a budget is updated.
+\end{itemize}
+
+\textbf{Key finding:} Resend's free tier restricts delivery to the account
+owner's email unless a custom domain is verified. For multi-user SaaS, domain
+verification is a hard requirement before the alert system is commercially
+useful.
+
+\subsection*{Phase 3 — AI Receipt Scanning \& UI Polish \textnormal{\small\color{phasegreen}(Complete)}}
+
+\begin{itemize}[leftmargin=1.2cm]
+  \item Receipt OCR via Groq API — model migrated from the decommissioned
+        \texttt{llama-3.2-90b-vision-preview} to
+        \texttt{meta-llama/llama-4-scout-17b-16e-instruct}, which supports
+        native JSON mode (\texttt{response\_format: json\_object}) for
+        deterministic structured output.
+  \item Prompt engineering tuned for Pakistani receipts and mobile wallet
+        screenshots (Easypaisa, JazzCash): explicit field mapping for
+        ``Total Amount'', Rs.\ prefix, and Pakistani date formats.
+  \item Express body limit raised to 10\,MB to accommodate base64-encoded
+        receipt images (default 100\,KB limit was silently dropping requests).
+  \item Pre-filled form fields highlighted in amber with a
+        ``Please verify before saving'' hint — the system never auto-saves.
+  \item New abstract geometric SVG logo (\texttt{KharchaLogo}) replaces the
+        emoji placeholder; works in both light and dark mode.
+  \item Mobile bottom-sheet panel with swipe-to-close, triggered by a floating
+        action button (FAB) — visible only on screens below the \texttt{md}
+        breakpoint.
+  \item TanStack Query (\texttt{@tanstack/react-query}) introduced for the
+        expenses list: optimistic insert and optimistic delete so the UI
+        responds instantly while the backend confirms in the background.
+  \item Budget progress bars animate color transitions:
+        green ($<$80\%) $\to$ amber (80--99\%) $\to$ red ($\geq$100\%).
+\end{itemize}
+
+\textbf{Key finding:} Groq vision models have high throughput and low latency
+but are subject to rapid deprecation cycles (one model was decommissioned during
+active development). An abstraction layer around the OCR provider is advisable
+so the underlying model can be swapped without touching application logic.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Current Technology Stack}
+
+\begin{table}[h]
+\centering
+\renewcommand{\arraystretch}{1.35}
+\begin{tabular}{p{3cm} p{4.5cm} p{5.5cm}}
+\toprule
+\textbf{Component} & \textbf{Solution} & \textbf{Free-Tier Limit} \\
+\midrule
+Database \& Auth     & Supabase (PostgreSQL)              & 500\,MB, 50,000 MAU \\
+Frontend Framework   & React 18 + Vite + Tailwind CSS     & — \\
+State Management     & TanStack Query v5                  & — \\
+Charts               & Recharts                           & — \\
+Backend              & Node.js + Express (ESM)            & — \\
+Frontend Hosting     & Vercel (planned)                   & Unlimited personal projects \\
+Backend Hosting      & Render (planned)                   & Free tier, sleeps after 15\,min \\
+Email                & Resend                             & 3,000 emails/month \\
+WhatsApp             & Meta Cloud API (flagged off)       & 1,000 conversations/month \\
+AI OCR               & Groq (Llama 4 Scout)               & Free during preview \\
+\bottomrule
+\end{tabular}
+\caption{Current infrastructure stack}
+\end{table}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Proposed Research Directions (Phase 4+)}
+
+\subsection{AI-Powered Spending Insights}
+
+\subsubsection*{Monthly Narrative Summary}
+Generate a plain-language summary of the user's month: top spending categories,
+biggest single expense, comparison to last month, and one actionable
+recommendation. Deliverable via email on the 1st of each month (Resend +
+cron-job.org) and visible as a collapsible card on the dashboard.
+
+\textit{Research question:} Which LLM prompt structure produces the most
+accurate and readable summaries for Pakistani spending contexts (PKR, local
+vendor names, utility bills)?
+
+\subsubsection*{Anomaly Detection}
+Flag expenses that are statistically unusual relative to the user's own history
+(e.g.\ a single Food expense 3$\times$ the monthly average). Can be implemented
+as a lightweight z-score check on the backend without a dedicated ML model.
+
+\subsubsection*{Next-Month Spend Prediction}
+Use the last 3--6 months of category-level spending to produce a simple linear
+forecast. Display as a ``predicted budget'' suggestion when a user opens the
+Budget Settings modal for a new month.
+
+\subsection{Automation Pipelines}
+
+\subsubsection*{Bank SMS Parsing}
+Pakistani banks (HBL, MCB, UBL, Meezan) send structured SMS alerts on every
+transaction. A mobile companion app or browser extension could forward these
+SMS messages to \texttt{POST /api/scan-sms}, which parses the text using a
+regex + LLM hybrid and auto-creates a draft expense for user confirmation.
+
+\textit{Technical challenge:} Android SMS permissions and iOS restrictions
+differ. A PWA cannot read SMS; a native wrapper (Capacitor or React Native)
+would be required.
+
+\subsubsection*{Recurring Expense Detection}
+Analyse expense history to identify patterns (same vendor, similar amount,
+similar date each month) and surface them as suggested entries at the start of
+each billing cycle. No user configuration required.
+
+\subsubsection*{Voice Input}
+Integrate Groq's Whisper endpoint (\texttt{whisper-large-v3-turbo}) for
+voice-to-expense: the user speaks ``Spent 350 on biryani today'' and the app
+parses it into a pre-filled form. Groq's Whisper is currently free with no
+stated limit.
+
+\subsection{Engagement \& Retention Features}
+
+\subsubsection*{Daily Logging Streaks}
+Track consecutive days with at least one expense logged. Display a streak
+counter in the header. Streak-break email reminder sent via Resend if no
+expense is logged by 9\,PM.
+
+\subsubsection*{Savings Goals}
+Users define a goal (e.g.\ ``Save Rs\,20,000 for a laptop by October''). The
+system tracks the gap between income and expenses and shows a goal progress bar.
+Requires adding an optional income-tracking table.
+
+\subsubsection*{Split Expenses}
+Allow a workspace member to flag an expense as shared and assign a percentage
+to each member. The system tracks each member's balance and shows who owes whom.
+Relevant for roommates and shared household budgets.
+
+\subsection{Data Export \& Reporting}
+
+\subsubsection*{CSV / Excel Export}
+A \texttt{GET /api/export?workspace\_id=\&month=\&format=csv} endpoint that
+streams a spreadsheet of the filtered expenses. No third-party library needed
+for CSV; \texttt{xlsx} (SheetJS) for Excel.
+
+\subsubsection*{Scheduled PDF Report}
+Monthly PDF summary (expense table + pie chart + budget status) generated
+server-side using \texttt{puppeteer} or \texttt{@react-pdf/renderer} and
+delivered via Resend attachment.
+
+\subsection{Infrastructure \& Reliability}
+
+\subsubsection*{Render Cold-Start Mitigation}
+Render's free tier suspends the backend after 15\,minutes of inactivity,
+causing a 30--50\,second cold start on the next request. Mitigation: register
+a free cron at \href{https://cron-job.org}{cron-job.org} to ping
+\texttt{/health} every 14\,minutes, keeping the service warm.
+
+\subsubsection*{Provider Abstraction for AI}
+Create an \texttt{OcrProvider} interface with a \texttt{scan(dataUri, categories)}
+method. Implement two concrete providers: \texttt{GroqProvider} (current) and
+\texttt{GeminiProvider} (fallback). The route selects the active provider via an
+environment variable (\texttt{OCR\_PROVIDER=groq|gemini}). This insulates the
+application from future model deprecations.
+
+\subsubsection*{Audit Log}
+Record every expense create, update, and delete in an \texttt{audit\_log} table:
+\texttt{(id, workspace\_id, user\_id, action, table\_name, record\_id, old\_data jsonb, new\_data jsonb, created\_at)}.
+Essential for team workspaces where multiple members can modify shared records.
+
+\subsection{Monetisation Path}
+
+\begin{table}[h]
+\centering
+\renewcommand{\arraystretch}{1.35}
+\begin{tabular}{p{2.5cm} p{2.5cm} p{7.5cm}}
+\toprule
+\textbf{Tier} & \textbf{Price} & \textbf{Includes} \\
+\midrule
+Starter  & Free          & 1 workspace, 5 categories, 3 budget alerts/month, manual entry only \\
+Growth   & \$9--15/month & Unlimited categories, unlimited alerts, receipt scanning, CSV export, monthly summary email \\
+Team     & \$49+/month   & Multi-member workspaces, audit log, split expenses, scheduled PDF reports, priority support \\
+\bottomrule
+\end{tabular}
+\caption{Proposed monetisation tiers}
+\end{table}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Suggested Next Sprint (Priority Order)}
+
+\begin{enumerate}[leftmargin=1.2cm]
+  \item \textbf{Deploy} — Vercel (frontend) + Render (backend). Config files
+        already in repository. Establishes a shareable demo URL for team
+        review.
+  \item \textbf{CSV Export} — single endpoint, no new dependencies for CSV.
+        High user value, low implementation cost.
+  \item \textbf{Render keep-alive cron} — 15-minute cron-job.org ping.
+        Prevents the most visible user-facing issue on the free tier.
+  \item \textbf{Monthly AI Summary} — Groq text model + Resend + cron.
+        Differentiates the product from generic expense trackers.
+  \item \textbf{OCR Provider Abstraction} — insulates future development from
+        Groq model deprecation cycles.
+  \item \textbf{Voice Input} — Groq Whisper integration. Fast to build given
+        the existing Groq SDK dependency.
+\end{enumerate}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Conclusion}
+
+The three foundational phases have proven that a production-quality, multi-tenant
+expense tracking SaaS can be built entirely on free-tier infrastructure. The
+architecture — Supabase for data and auth, Express for backend logic, Groq for
+AI features, Resend for notifications — is modular enough that each component
+can be upgraded to a paid tier independently as the user base grows. The research
+directions proposed in this document focus on features that increase daily
+engagement (streaks, voice input, smart summaries) and operational reliability
+(provider abstraction, audit logs, cold-start mitigation), both of which are
+necessary before a public launch.
+
+\vspace{1cm}
+\noindent\rule{\textwidth}{0.4pt}
+\small
+\noindent Repository: \url{https://github.com/UmairAbbas1/kharcha-tracker} \\
+Stack: React 18 · Vite · Tailwind CSS · TanStack Query · Node.js · Express · Supabase · Groq · Resend \\
+Document version: 2.0 — \today
+
+\end{document}
