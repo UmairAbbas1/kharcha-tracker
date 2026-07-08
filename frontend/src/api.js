@@ -1,6 +1,6 @@
 import { supabase } from './lib/supabase'
 
-const BACKEND = 'http://localhost:5000'
+const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000'
 
 // Helper: get current session token for backend calls
 async function getToken() {

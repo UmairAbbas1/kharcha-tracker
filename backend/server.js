@@ -32,7 +32,23 @@ const adminClient = serviceRoleKey
 const app  = express()
 const PORT = process.env.PORT || 5000
 
-app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:4173'] }))
+app.use(cors({
+  origin: (origin, cb) => {
+    // Allow requests with no origin (mobile apps, curl, Render health checks)
+    if (!origin) return cb(null, true)
+    const allowed = [
+      'http://localhost:5173',
+      'http://localhost:4173',
+      process.env.FRONTEND_URL,           // set this on Render once you have Vercel URL
+    ].filter(Boolean)
+    // Also allow any *.vercel.app subdomain
+    if (allowed.includes(origin) || origin.endsWith('.vercel.app')) {
+      return cb(null, true)
+    }
+    cb(new Error(`CORS: origin ${origin} not allowed`))
+  },
+  credentials: true,
+}))
 app.use(express.json({ limit: '10mb' }))  // large enough for base64 receipt images
 
 // ── Auth middleware ───────────────────────────────────────────
