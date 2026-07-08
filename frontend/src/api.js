@@ -113,6 +113,16 @@ export async function scanReceipt(dataUri, categories = []) {
     body: JSON.stringify({ image: dataUri, categories }),
   })
 
+  // Guard against HTML error pages (e.g. body too large, server down)
+  const contentType = res.headers.get('content-type') || ''
+  if (!contentType.includes('application/json')) {
+    throw new Error(
+      res.status === 413
+        ? 'Image too large. Please use a smaller photo.'
+        : `Scan failed (server error ${res.status}). Is the backend running?`
+    )
+  }
+
   const json = await res.json()
   if (!res.ok) throw new Error(json.error || 'Scan failed')
   return json.data

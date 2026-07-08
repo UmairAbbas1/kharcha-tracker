@@ -217,6 +217,13 @@ export default function DashboardPage() {
           categories={categories}
           expenses={expenses}
           onClose={() => setBudgetOpen(false)}
+          onBudgetChanged={() => {
+            // Budget was saved — DB has already cleared stale alert_logs via upsertBudget.
+            // Refresh in-memory alertLogs immediately so banners disappear right away.
+            getAlertLogs(activeWorkspace.id, currentMonth)
+              .then(r => setAlertLogs(r.data || []))
+              .catch(() => {})
+          }}
         />
       )}
     </>

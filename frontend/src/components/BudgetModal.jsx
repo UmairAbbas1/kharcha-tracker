@@ -184,10 +184,11 @@ function MonthPicker({ value, onChange }) {
 }
 
 // ── Main modal ────────────────────────────────────────────────
-export default function BudgetModal({ workspaceId, categories, expenses, onClose }) {
+export default function BudgetModal({ workspaceId, categories, expenses, onClose, onBudgetChanged }) {
   const [month,      setMonth]      = useState(new Date().toISOString().slice(0, 7))
-  const [budgets,    setBudgets]    = useState([])   // rows from DB
+  const [budgets,    setBudgets]    = useState([])
   const [loading,    setLoading]    = useState(true)
+  const [dirty,      setDirty]      = useState(false)  // true if any budget was saved/deleted
 
   // Pre-compute spend per category for this month
   const spendMap = {}
@@ -225,17 +226,25 @@ export default function BudgetModal({ workspaceId, categories, expenses, onClose
 
   const handleSave = async (categoryId, amount) => {
     await upsertBudget(workspaceId, categoryId, month, amount)
+    setDirty(true)
     await fetchBudgets()
   }
 
   const handleDelete = async (categoryId) => {
     await deleteBudget(workspaceId, categoryId, month)
+    setDirty(true)
     await fetchBudgets()
+  }
+
+  // On close — notify parent to refresh alert logs if anything changed
+  const handleClose = () => {
+    if (dirty) onBudgetChanged?.()
+    onClose()
   }
 
   // Close on backdrop click
   const handleBackdrop = (e) => {
-    if (e.target === e.currentTarget) onClose()
+    if (e.target === e.currentTarget) handleClose()
   }
 
   return (
@@ -258,7 +267,7 @@ export default function BudgetModal({ workspaceId, categories, expenses, onClose
           <div className="flex items-center gap-4">
             <MonthPicker value={month} onChange={setMonth} />
             <button
-              onClick={onClose}
+              onClick={handleClose}
               className="text-gray-400 hover:text-gray-700 transition"
               title="Close"
             >
@@ -321,7 +330,7 @@ export default function BudgetModal({ workspaceId, categories, expenses, onClose
             Clear a field to remove the budget.
           </p>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="w-full rounded-2xl py-2.5 text-sm font-bold text-white shadow-md transition-all active:scale-95"
             style={{ background: '#4169E1' }}
           >
