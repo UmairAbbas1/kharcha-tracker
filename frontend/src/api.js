@@ -145,8 +145,8 @@ export async function getBudgets(workspaceId, month) {
 
 /**
  * Insert or update a budget row.
- * Clears alert_logs for this scope+month so stale banners don't reappear
- * after the budget amount changes.
+ * Clears alert_logs for the workspace+month so stale banners don't reappear
+ * after any budget amount changes.
  */
 export async function upsertBudget(workspaceId, categoryId, month, amount) {
   const { data, error } = await supabase
@@ -176,7 +176,6 @@ export async function upsertBudget(workspaceId, categoryId, month, amount) {
     },
     body: JSON.stringify({
       workspace_id: workspaceId,
-      category_id:  categoryId ?? null,
       month,
     }),
   }).catch(err => console.warn('[upsertBudget] failed to clear alert logs:', err))
