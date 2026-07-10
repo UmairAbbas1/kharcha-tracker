@@ -28,13 +28,9 @@ export default function DashboardPage() {
   const [sheetOpen,       setSheetOpen]       = useState(false)
   const [prefill,         setPrefill]         = useState(null)
 
-  // Previous month for summary card (always show last month's summary)
-  const prevMonth = (() => {
-    const d = new Date()
-    d.setDate(1)
-    d.setMonth(d.getMonth() - 1)
-    return d.toISOString().slice(0, 7)
-  })()
+  // For testing: fetch current month summary (July 2026)
+  // In production this would be prevMonth to show last month's complete data
+  const prevMonth = new Date().toISOString().slice(0, 7)
 
   const currentMonth = new Date().toISOString().slice(0, 7)
 
