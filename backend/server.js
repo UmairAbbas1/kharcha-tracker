@@ -10,6 +10,7 @@ import { transcribeAndExtract } from './ocr/voiceScanner.js'
 import { parseAndExtract }      from './ocr/smsParser.js'
 import { run as runSummaries, previousMonth } from './summaries/summaryEngine.js'
 import { getActiveProvider }    from './ocr/providerFactory.js'
+import ExcelJS                  from 'exceljs'
 import multer from 'multer'
 
 // multer — memory storage, 10 MB limit, audio files only
@@ -697,7 +698,6 @@ app.get('/api/export', requireAuth, async (req, res) => {
     const filename = `kharcha-${wName}-${suffix}.xlsx`
 
     // ── Build Excel workbook with ExcelJS ───────────────────
-    const ExcelJS = (await import('exceljs')).default
     const wb      = new ExcelJS.Workbook()
     wb.creator    = 'Kharcha Tracker'
     wb.created    = new Date()
