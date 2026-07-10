@@ -128,6 +128,70 @@ export async function scanReceipt(dataUri, categories = []) {
   return json.data
 }
 
+// ── Voice OCR ─────────────────────────────────────────────────────────
+/**
+ * Send an audio Blob to POST /api/scan-voice.
+ * Returns { amount, category, vendor, date, transcript }.
+ *
+ * Uses FormData (not JSON) because the payload is a binary file.
+ */
+export async function scanVoice(audioBlob, categories = []) {  const token = await getToken()
+
+  const form = new FormData()
+  form.append('audio',      audioBlob, 'recording.webm')
+  form.append('categories', JSON.stringify(categories))
+
+  const res = await fetch(`${BACKEND}/api/scan-voice`, {
+    method:  'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    // Do NOT set Content-Type — browser sets it with correct boundary for FormData
+    body: form,
+  })
+
+  const contentType = res.headers.get('content-type') || ''
+  if (!contentType.includes('application/json')) {
+    throw new Error(
+      res.status === 413
+        ? 'Recording too large. Please try a shorter recording.'
+        : `Voice scan failed (server error ${res.status}). Is the backend running?`
+    )
+  }
+
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error || 'Voice scan failed')
+  return { ...json.data, transcript: json.transcript }
+}
+
+// ── SMS Parsing ───────────────────────────────────────────────────────
+/**
+ * Send raw SMS text to POST /api/scan-sms.
+ * Returns { amount, category, vendor, date, method }.
+ * method = 'regex' | 'llm'
+ */
+export async function scanSms(smsText, categories = []) {
+  const token = await getToken()
+
+  const res = await fetch(`${BACKEND}/api/scan-sms`, {
+    method:  'POST',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({ smsText, categories }),
+  })
+
+  const contentType = res.headers.get('content-type') || ''
+  if (!contentType.includes('application/json')) {
+    throw new Error(
+      `SMS scan failed (server error ${res.status}). Is the backend running?`
+    )
+  }
+
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error || 'SMS scan failed')
+  return { ...json.data, method: json.method }
+}
+
 // ── Budgets ───────────────────────────────────────────────────────────
 
 export async function getBudgets(workspaceId, month) {

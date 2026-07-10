@@ -4,8 +4,21 @@ import dotenv     from 'dotenv'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { createClient } from '@supabase/supabase-js'
-import { evaluate }      from './alerts/alertEngine.js'
-import { scanReceipt }  from './ocr/receiptScanner.js'
+import { evaluate }             from './alerts/alertEngine.js'
+import { scanReceipt }          from './ocr/receiptScanner.js'
+import { transcribeAndExtract } from './ocr/voiceScanner.js'
+import { parseAndExtract }      from './ocr/smsParser.js'
+import multer from 'multer'
+
+// multer — memory storage, 10 MB limit, audio files only
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits:  { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith('audio/')) return cb(null, true)
+    cb(new Error('Only audio files are accepted'), false)
+  },
+})
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 dotenv.config({ path: join(__dirname, '..', '.env.backend') })
@@ -314,6 +327,80 @@ app.delete('/api/workspace/:workspaceId/members/:userId', requireAuth, async (re
   } catch (err) {
     console.error('[DELETE /members]', err)
     res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// ── POST /api/scan-sms — hybrid SMS expense extraction ───────
+app.post('/api/scan-sms', requireAuth, async (req, res) => {
+  const { smsText, categories } = req.body
+
+  if (!smsText || typeof smsText !== 'string' || !smsText.trim()) {
+    return res.status(400).json({
+      success: false,
+      error: 'smsText is required and must be under 1,000 characters',
+    })
+  }
+
+  if (smsText.length > 1000) {
+    return res.status(400).json({
+      success: false,
+      error: 'smsText is required and must be under 1,000 characters',
+    })
+  }
+
+  try {
+    const result = await parseAndExtract(smsText.trim(), categories || [])
+    res.json({
+      success: true,
+      data: {
+        amount:   result.amount,
+        category: result.category,
+        vendor:   result.vendor,
+        date:     result.date,
+      },
+      method: result.method,
+      hint:   'Please verify before saving',
+    })
+  } catch (err) {
+    const status = err.status || 500
+    console.error('[POST /api/scan-sms]', err.message)
+    res.status(status).json({ success: false, error: err.message })
+  }
+})
+
+// ── POST /api/scan-voice — transcribe audio + extract expense ─
+app.post('/api/scan-voice', requireAuth, upload.single('audio'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ success: false, error: 'No audio file received' })
+  }
+
+  let categories = []
+  try {
+    categories = req.body.categories ? JSON.parse(req.body.categories) : []
+  } catch { /* ignore parse error, default to [] */ }
+
+  try {
+    const result = await transcribeAndExtract(
+      req.file.buffer,
+      req.file.mimetype,
+      categories
+    )
+    console.log('[scan-voice] extracted:', result)
+    res.json({
+      success:    true,
+      transcript: result.transcript,
+      data: {
+        amount:   result.amount,
+        category: result.category,
+        vendor:   result.vendor,
+        date:     result.date,
+      },
+      hint: 'Please verify before saving',
+    })
+  } catch (err) {
+    const status = err.status || 500
+    console.error('[POST /api/scan-voice]', err.message)
+    res.status(status).json({ success: false, error: err.message })
   }
 })
 
