@@ -147,13 +147,13 @@ export default function AddForm({ categories = [], onAdd, loading, prefill, onCl
   const methodLabel = extractMethod === 'regex' ? 'pattern match' : extractMethod === 'llm' ? 'AI' : null
 
   return (
-    <div className="glass rounded-3xl p-6 shadow-lg">
+    <div className="card p-6">
 
       {/* ── Header row ── */}
       <div className="flex items-start justify-between mb-4 gap-2">
         <h2 className="text-sm font-bold text-gray-600 flex items-center gap-2
                        uppercase tracking-wider pt-1 flex-shrink-0">
-          <PlusCircle size={15} color="#4169E1" />
+          <PlusCircle size={15} color="#2563EB" />
           Add Expense
         </h2>
 
@@ -176,8 +176,8 @@ export default function AddForm({ categories = [], onAdd, loading, prefill, onCl
             className={`flex items-center gap-1.5 rounded-2xl px-3 py-2 text-xs font-bold
                         border transition active:scale-95
                         ${smsMode
-                          ? 'bg-blue-50 border-royal text-royal'
-                          : 'bg-white/60 border-blue-100 text-royal hover:bg-blue-50'}`}
+                          ? 'bg-blue-50 border-accent text-accent'
+                          : 'bg-white/60 border-blue-100 text-accent hover:bg-blue-50'}`}
           >
             <MessageSquare size={13} />
             Paste SMS
@@ -223,7 +223,7 @@ export default function AddForm({ categories = [], onAdd, loading, prefill, onCl
                 disabled={smsText.trim().length < 10 || smsLoading}
                 className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs
                            font-bold text-white transition active:scale-95 disabled:opacity-50"
-                style={{ background: '#4169E1' }}
+                style={{ background: '#2563EB' }}
               >
                 {smsLoading
                   ? <><Loader2 size={11} className="animate-spin" /> Extracting…</>
@@ -329,7 +329,7 @@ export default function AddForm({ categories = [], onAdd, loading, prefill, onCl
             className="w-full rounded-2xl py-2.5 text-sm font-bold text-white
                        flex items-center justify-center gap-2 shadow-md
                        transition-all active:scale-95 disabled:opacity-60"
-            style={{ background: '#4169E1' }}
+            style={{ background: '#2563EB' }}
           >
             <PlusCircle size={15} />
             {loading ? 'Adding…' : 'Add Kharcha'}

@@ -57,11 +57,9 @@ export default function BottomSheet({ open, onClose, children }) {
       <div
         ref={sheetRef}
         className="fixed bottom-0 left-0 right-0 z-50 md:hidden
-                   rounded-t-3xl shadow-2xl overflow-hidden"
+                   rounded-t-xl shadow-2xl overflow-hidden"
         style={{
-          background:       'rgba(255,255,255,0.96)',
-          backdropFilter:   'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
+          background:       '#FFFFFF',
           transform:        open ? 'translateY(0)' : 'translateY(100%)',
           transition:       open
             ? 'transform 350ms cubic-bezier(0.32, 0.72, 0, 1)'

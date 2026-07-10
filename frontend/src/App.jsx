@@ -30,7 +30,7 @@ function AppInner() {
   if (!activeWorkspace) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="glass rounded-3xl p-8 text-center">
+        <div className="card p-8 text-center">
           <p className="text-gray-600 text-sm">
             No workspace found. Contact support if you believe this is an error.
           </p>

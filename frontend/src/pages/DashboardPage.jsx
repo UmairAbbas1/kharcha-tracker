@@ -1,8 +1,19 @@
+/**
+ * DashboardPage.jsx — Redesigned layout.
+ * Key changes:
+ *   - Surface (#F7F8FC) page background, no blobs
+ *   - Flat white cards, no glassmorphism
+ *   - Plus Jakarta Sans throughout via Tailwind fontFamily
+ *   - BudgetRings component wired with budgets + expenses
+ *   - Header simplified: logo left, actions right
+ */
+
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth }      from '../context/AuthContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { useExpenses }  from '../hooks/useExpenses'
-import { getCategories, getAlertLogs, getMonthlySummary } from '../api'
+import { getCategories, getAlertLogs, getMonthlySummary, getBudgets } from '../api'
+
 import BalanceCard        from '../components/BalanceCard'
 import AddForm            from '../components/AddForm'
 import SpendPie           from '../components/SpendPie'
@@ -10,42 +21,37 @@ import SpendBar           from '../components/SpendBar'
 import ExpenseList        from '../components/ExpenseList'
 import BudgetBanner       from '../components/BudgetBanner'
 import BudgetModal        from '../components/BudgetModal'
+import BudgetRings        from '../components/BudgetRings'
 import BottomSheet        from '../components/BottomSheet'
 import KharchaLogo        from '../components/KharchaLogo'
 import MonthlySummaryCard from '../components/MonthlySummaryCard'
-import { LogOut, Wallet, Plus } from 'lucide-react'
+import { LogOut, Settings, Plus } from 'lucide-react'
 
 export default function DashboardPage() {
-  const { signOut, user }                          = useAuth()
+  const { signOut, user }                                = useAuth()
   const { activeWorkspace, workspaces, switchWorkspace } = useWorkspace()
 
-  const [categories,      setCategories]      = useState([])
-  const [alertLogs,       setAlertLogs]       = useState([])
-  const [monthlySummary,  setMonthlySummary]  = useState(null)
-  const [catLoading,      setCatLoading]      = useState(true)
-  const [error,           setError]           = useState(null)
-  const [budgetOpen,      setBudgetOpen]      = useState(false)
-  const [sheetOpen,       setSheetOpen]       = useState(false)
-  const [prefill,         setPrefill]         = useState(null)
-
-  // For testing: fetch current month summary (July 2026)
-  // In production this would be prevMonth to show last month's complete data
-  const prevMonth = new Date().toISOString().slice(0, 7)
+  const [categories,     setCategories]     = useState([])
+  const [alertLogs,      setAlertLogs]      = useState([])
+  const [monthlySummary, setMonthlySummary] = useState(null)
+  const [budgets,        setBudgets]        = useState([])
+  const [catLoading,     setCatLoading]     = useState(true)
+  const [error,          setError]          = useState(null)
+  const [budgetOpen,     setBudgetOpen]     = useState(false)
+  const [sheetOpen,      setSheetOpen]      = useState(false)
+  const [prefill,        setPrefill]        = useState(null)
 
   const currentMonth = new Date().toISOString().slice(0, 7)
+  const prevMonth    = (() => {
+    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1)
+    return d.toISOString().slice(0, 7)
+  })()
 
-  // ── TanStack Query for expenses ───────────────────────────
   const {
-    expenses,
-    isLoading:   expLoading,
-    addExpense,
-    isAdding,
-    addError,
-    resetAddError,
-    removeExpense,
+    expenses, isLoading: expLoading,
+    addExpense, isAdding, addError, resetAddError, removeExpense,
   } = useExpenses(activeWorkspace?.id)
 
-  // ── Categories + alert logs (existing pattern) ────────────
   const fetchSupporting = useCallback(async () => {
     if (!activeWorkspace) return
     try {
@@ -53,7 +59,11 @@ export default function DashboardPage() {
       setError(null)
       const catRes = await getCategories(activeWorkspace.id)
       setCategories(catRes.data)
-      // Fire alert logs and monthly summary fetches in parallel (non-blocking)
+
+      // parallel fetches — non-blocking
+      getBudgets(activeWorkspace.id, currentMonth)
+        .then(r => setBudgets(r.data || []))
+        .catch(() => {})
       getAlertLogs(activeWorkspace.id, currentMonth)
         .then(r => setAlertLogs(r.data || []))
         .catch(() => {})
@@ -61,8 +71,8 @@ export default function DashboardPage() {
         .then(r => setMonthlySummary(r.data || null))
         .catch(() => {})
     } catch (err) {
-      console.error('[DashboardPage] fetch error:', err)
-      setError('Failed to load data.')
+      console.error('[DashboardPage]', err)
+      setError('Failed to load workspace data.')
     } finally {
       setCatLoading(false)
     }
@@ -70,7 +80,6 @@ export default function DashboardPage() {
 
   useEffect(() => { fetchSupporting() }, [fetchSupporting])
 
-  // Refresh alert logs 2 s after an expense is added (alert engine latency)
   const refreshAlertLogs = () => {
     if (!activeWorkspace) return
     setTimeout(() => {
@@ -80,14 +89,13 @@ export default function DashboardPage() {
     }, 2000)
   }
 
-  const handleAdd = async (data) => {
-    await new Promise((resolve, reject) => {
+  const handleAdd = (data) =>
+    new Promise((resolve, reject) => {
       addExpense(data, {
         onSuccess: () => { setSheetOpen(false); setPrefill(null); refreshAlertLogs(); resolve() },
         onError:   (err) => reject(err),
       })
     })
-  }
 
   const total   = expenses.reduce((s, e) => s + Number(e.amount), 0)
   const loading = expLoading || catLoading
@@ -101,35 +109,32 @@ export default function DashboardPage() {
   }
 
   return (
-    <>
-      {/* Ambient blobs */}
-      <div className="blob w-96 h-96 bg-royal"    style={{ top: '-80px',  left: '-80px'  }} />
-      <div className="blob w-80 h-80 bg-blush"    style={{ bottom: '-60px', right: '-60px' }} />
-      <div className="blob w-60 h-60 bg-indigo-300" style={{ top: '40%', left: '55%' }} />
-
-      <div className="relative z-10 min-h-screen px-4 py-8 md:py-12">
+    <div className="min-h-screen" style={{ background: '#F7F8FC' }}>
+      <div className="max-w-5xl mx-auto px-4 py-8 md:py-10">
 
         {/* ── Header ── */}
-        <header className="max-w-4xl mx-auto mb-8 flex items-center justify-between">
+        <header className="flex items-center justify-between mb-8 animate-entry">
           <div className="flex items-center gap-3">
-            <KharchaLogo size={36} />
+            <KharchaLogo size={32} color="#2563EB" />
             <div>
-              <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight"
-                  style={{ color: '#4169E1' }}>
+              <h1 className="text-lg font-bold leading-tight" style={{ color: '#0F1117' }}>
                 Kharcha Tracker
               </h1>
-              <p className="text-xs text-gray-400 mt-0.5">
-                {activeWorkspace?.name || 'Loading...'}
-              </p>
+              {activeWorkspace && (
+                <p className="text-xs" style={{ color: '#6B7280' }}>
+                  {activeWorkspace.name}
+                </p>
+              )}
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             {workspaces.length > 1 && (
               <select
                 value={activeWorkspace?.id || ''}
                 onChange={e => switchWorkspace(e.target.value)}
-                className="text-xs bg-white/60 border border-blue-100 rounded-xl px-3 py-2 text-gray-700 cursor-pointer"
+                className="text-xs rounded-lg border px-2.5 py-1.5 cursor-pointer"
+                style={{ borderColor: '#E5E7EB', color: '#6B7280', background: '#fff' }}
               >
                 {workspaces.map(ws => (
                   <option key={ws.id} value={ws.id}>{ws.name}</option>
@@ -139,91 +144,117 @@ export default function DashboardPage() {
 
             <button
               onClick={() => setBudgetOpen(true)}
-              className="text-xs font-bold flex items-center gap-1.5 px-3 py-2 rounded-xl
-                         border border-blue-100 bg-white/60 text-royal hover:bg-blue-50 transition"
-              title="Set budgets"
+              className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5
+                         text-xs font-semibold transition hover:bg-white"
+              style={{ borderColor: '#E5E7EB', color: '#2563EB', background: '#fff' }}
+              title="Budget settings"
             >
-              <Wallet size={13} />
+              <Settings size={13} strokeWidth={2} />
               Budgets
             </button>
 
             <button
               onClick={signOut}
-              className="text-xs text-gray-500 hover:text-red-600 transition flex items-center gap-1.5"
+              className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5
+                         text-xs font-semibold transition hover:bg-red-50"
+              style={{ borderColor: '#E5E7EB', color: '#6B7280', background: '#fff' }}
               title="Sign out"
             >
-              <LogOut size={14} />
+              <LogOut size={13} strokeWidth={2} />
               Sign out
             </button>
           </div>
         </header>
 
-        {/* ── Error banner ── */}
+        {/* ── Error state ── */}
         {(error || addError) && (
-          <div className="max-w-4xl mx-auto mb-5 bg-red-50 border border-red-200 text-red-600
-                          text-sm rounded-2xl px-5 py-3 flex items-center justify-between gap-3">
-            <span>⚠️ {error || addError?.message}</span>
+          <div className="mb-6 rounded-xl border px-4 py-3 flex items-center justify-between
+                          text-sm gap-3 animate-entry"
+               style={{ background: '#FFF7ED', borderColor: '#FDBA74', color: '#C2410C' }}>
+            <span>{error || addError?.message}</span>
             <button
               onClick={() => { setError(null); resetAddError?.() }}
-              className="text-xs font-bold underline hover:no-underline"
+              className="text-xs font-semibold underline"
             >
               Dismiss
             </button>
           </div>
         )}
 
-        <div className="max-w-4xl mx-auto space-y-5">
-          <BudgetBanner alertLogs={alertLogs} />
+        {/* ── Budget alert banners ── */}
+        {alertLogs.length > 0 && (
+          <div className="mb-6 animate-entry delay-100">
+            <BudgetBanner alertLogs={alertLogs} />
+          </div>
+        )}
 
-          {/* Monthly AI summary card — previous month, dismissible */}
-          {monthlySummary && (
-            <MonthlySummaryCard
-              summary={monthlySummary}
-              momChange={null}
-            />
-          )}
+        {/* ── Monthly summary card ── */}
+        {monthlySummary && (
+          <div className="mb-6 animate-entry delay-100">
+            <MonthlySummaryCard summary={monthlySummary} momChange={null} />
+          </div>
+        )}
 
+        {/* ── Balance hero ── */}
+        <div className="mb-6 animate-entry delay-100">
           <BalanceCard total={total} count={expenses.length} loading={loading} />
+        </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {/* Left — AddForm desktop only */}
-            <div className="flex flex-col gap-5">
-              <div className="hidden md:block">
-                <AddForm {...addFormProps} />
-              </div>
-              <SpendPie expenses={expenses} />
-            </div>
+        {/* ── Budget rings ── */}
+        {budgets.length > 0 && (
+          <div className="mb-6 animate-entry delay-200">
+            <BudgetRings
+              budgets={budgets}
+              categories={categories}
+              expenses={expenses}
+              month={currentMonth}
+            />
+          </div>
+        )}
 
-            {/* Right */}
-            <div className="flex flex-col gap-5">
-              <SpendBar expenses={expenses} />
-              <ExpenseList
-                expenses={expenses}
-                onDelete={removeExpense}
-                loading={loading}
-                workspaceId={activeWorkspace?.id}
-                currentMonth={currentMonth}
-              />
+        {/* ── Main grid ── */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5 animate-entry delay-300">
+
+          {/* Left column */}
+          <div className="flex flex-col gap-5">
+            {/* Add form — desktop only */}
+            <div className="hidden md:block">
+              <AddForm {...addFormProps} />
             </div>
+            <SpendPie expenses={expenses} />
+          </div>
+
+          {/* Right column */}
+          <div className="flex flex-col gap-5">
+            <SpendBar expenses={expenses} />
+            <ExpenseList
+              expenses={expenses}
+              onDelete={removeExpense}
+              loading={loading}
+              workspaceId={activeWorkspace?.id}
+              currentMonth={currentMonth}
+            />
           </div>
         </div>
 
-        <footer className="max-w-4xl mx-auto text-center mt-10 text-xs text-gray-400">
-          Signed in as {user?.email} — Data secured with Supabase RLS
+        {/* ── Footer ── */}
+        <footer className="text-center mt-10 text-xs" style={{ color: '#9CA3AF' }}>
+          Signed in as {user?.email}
+          <span className="mx-2 opacity-40">·</span>
+          Secured with Supabase RLS
         </footer>
       </div>
 
-      {/* ── Mobile FAB — hidden on desktop ── */}
+      {/* ── Mobile FAB ── */}
       <button
         onClick={() => setSheetOpen(true)}
         className="fixed bottom-6 right-6 z-30 md:hidden w-14 h-14 rounded-full
-                   shadow-xl flex items-center justify-center text-white
+                   shadow-lg flex items-center justify-center text-white
                    active:scale-95 transition-transform"
-        style={{ background: '#4169E1' }}
-        title="Add expense"
+        style={{ background: '#2563EB' }}
         aria-label="Add expense"
       >
-        <Plus size={24} />
+        <Plus size={22} strokeWidth={2.5} />
       </button>
 
       {/* ── Mobile Bottom Sheet ── */}
@@ -231,7 +262,7 @@ export default function DashboardPage() {
         <AddForm {...addFormProps} />
       </BottomSheet>
 
-      {/* ── Budget Settings Modal ── */}
+      {/* ── Budget Modal ── */}
       {budgetOpen && (
         <BudgetModal
           workspaceId={activeWorkspace.id}
@@ -239,14 +270,15 @@ export default function DashboardPage() {
           expenses={expenses}
           onClose={() => setBudgetOpen(false)}
           onBudgetChanged={() => {
-            // Budget was saved — DB has already cleared stale alert_logs via upsertBudget.
-            // Refresh in-memory alertLogs immediately so banners disappear right away.
+            getBudgets(activeWorkspace.id, currentMonth)
+              .then(r => setBudgets(r.data || []))
+              .catch(() => {})
             getAlertLogs(activeWorkspace.id, currentMonth)
               .then(r => setAlertLogs(r.data || []))
               .catch(() => {})
           }}
         />
       )}
-    </>
+    </div>
   )
 }

@@ -25,7 +25,7 @@
 body {
   background-color: var(--color-surface);
   color:            var(--color-ink);
-  font-family:      'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  font-family:      'Plus Jakarta Sans';
   font-size:        14px;
   line-height:      1.5;
   -webkit-font-smoothing:  antialiased;
@@ -39,6 +39,12 @@ body {
   border:        1px solid var(--color-border);
   border-radius: 12px;
   box-shadow:    var(--shadow-card);
+  transition:    transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.card:hover {
+  transform:     translateY(-2px);
+  box-shadow:    0 4px 12px rgba(15, 17, 23, 0.06);
 }
 
 .card-panel {
@@ -46,6 +52,14 @@ body {
   border:        1px solid var(--color-border);
   border-radius: 16px;
   box-shadow:    var(--shadow-panel);
+}
+
+button {
+  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+button:active {
+  transform: scale(0.97);
 }
 
 /* ── Legacy .glass alias — kept so components not yet redesigned work ─ */
@@ -130,3 +144,18 @@ textarea:focus-visible {
 .fade-slide-up {
   animation: fadeSlideUp 0.4s ease forwards;
 }
+
+/* ── Staggered Page Entry Animation ────────────────────────────────── */
+@keyframes pageEntry {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-entry {
+  opacity: 0;
+  animation: pageEntry 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.delay-100 { animation-delay: 100ms; }
+.delay-200 { animation-delay: 200ms; }
+.delay-300 { animation-delay: 300ms; }
+.delay-400 { animation-delay: 400ms; }
+

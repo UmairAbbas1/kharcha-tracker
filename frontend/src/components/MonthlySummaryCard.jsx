@@ -53,19 +53,18 @@ export default function MonthlySummaryCard({ summary, momChange }) {
     : `${momChange > 0 ? '+' : ''}${momChange}% vs last month`
 
   return (
-    <div className="rounded-2xl border border-indigo-100 bg-gradient-to-br
-                    from-indigo-50 to-blue-50 overflow-hidden shadow-sm">
+    <div className="card overflow-hidden">
 
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3
-                      border-b border-indigo-100">
+                      border-b border-border">
         <div className="flex items-center gap-2.5">
-          <KharchaLogo size={22} />
+          <KharchaLogo size={22} color="#2563EB" />
           <div>
-            <p className="text-xs font-bold text-indigo-600 uppercase tracking-wider">
+            <p className="text-xs font-bold text-accent uppercase tracking-wider">
               Monthly Summary
             </p>
-            <p className="text-sm font-extrabold text-gray-800 -mt-0.5">
+            <p className="text-sm font-bold text-ink -mt-0.5">
               {monthLabel}
             </p>
           </div>
@@ -73,8 +72,8 @@ export default function MonthlySummaryCard({ summary, momChange }) {
         <button
           onClick={handleDismiss}
           title="Dismiss"
-          className="text-gray-400 hover:text-gray-600 transition p-1 rounded-lg
-                     hover:bg-white/60"
+          className="text-slate hover:text-ink transition p-1 rounded-lg
+                     hover:bg-surface"
         >
           <X size={15} />
         </button>
@@ -82,17 +81,17 @@ export default function MonthlySummaryCard({ summary, momChange }) {
 
       {/* Summary text */}
       <div className="px-4 py-3">
-        <p className="text-sm text-gray-700 leading-relaxed">
+        <p className="text-sm text-ink leading-relaxed">
           {summary.summary_text}
         </p>
       </div>
 
       {/* Metrics footer */}
-      <div className="px-4 py-2.5 border-t border-indigo-100 bg-white/50
+      <div className="px-4 py-2.5 border-t border-border bg-surface
                       flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-1">
-          <span className="text-xs text-gray-500">Total spend:</span>
-          <span className="text-xs font-bold text-indigo-700">
+          <span className="text-xs text-slate">Total spend:</span>
+          <span className="text-xs font-bold text-accent">
             {pkr(summary.total_spend)}
           </span>
         </div>

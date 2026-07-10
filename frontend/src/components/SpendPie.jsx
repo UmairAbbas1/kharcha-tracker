@@ -1,3 +1,14 @@
+/**
+ * SpendPie.jsx — Category breakdown donut chart.
+ * Rules:
+ *   - Thinner donut (larger innerRadius)
+ *   - Center label shows total
+ *   - Inline % labels only for categories ≥ 5% of total
+ *   - Categories < 5% listed in a compact legend below (no inline label)
+ *   - Custom tooltip
+ *   - No default Recharts legend
+ */
+
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
 } from 'recharts'
@@ -5,19 +16,69 @@ import { PieChart as PieIcon } from 'lucide-react'
 
 const pkr = (n) => `Rs ${Number(n).toLocaleString('en-PK')}`
 
-const CustomTooltip = ({ active, payload }) => {
+function CustomTooltip({ active, payload }) {
   if (!active || !payload?.length) return null
   const { name, value, payload: p } = payload[0]
   return (
-    <div className="bg-white/95 border border-blue-100 rounded-2xl px-3 py-2 shadow-lg text-xs font-semibold">
-      <span style={{ color: p.color }}>{name}</span>
-      <span className="ml-2 text-gray-500">{pkr(value)}</span>
+    <div className="card px-3 py-2 text-xs">
+      <p className="font-semibold" style={{ color: p.color }}>{name}</p>
+      <p className="font-mono text-ink mt-0.5">{pkr(value)}</p>
     </div>
   )
 }
 
+function CenterLabel({ cx, cy, total }) {
+  return (
+    <g>
+      <text
+        x={cx} y={cy - 8}
+        textAnchor="middle"
+        fill="#6B7280"
+        fontSize={10}
+        fontFamily="Plus Jakarta Sans"
+        fontWeight={600}
+        letterSpacing="0.08em"
+        textTransform="uppercase"
+      >
+        TOTAL
+      </text>
+      <text
+        x={cx} y={cy + 12}
+        textAnchor="middle"
+        fill="#0F1117"
+        fontSize={15}
+        fontFamily="IBM Plex Mono"
+        fontWeight={600}
+        letterSpacing="-0.02em"
+      >
+        {pkr(total)}
+      </text>
+    </g>
+  )
+}
+
+function renderCustomLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent, name }) {
+  if (percent < 0.05) return null   // hide labels for slices < 5%
+  const RADIAN = Math.PI / 180
+  const radius = innerRadius + (outerRadius - innerRadius) * 1.35
+  const x      = cx + radius * Math.cos(-midAngle * RADIAN)
+  const y      = cy + radius * Math.sin(-midAngle * RADIAN)
+  return (
+    <text
+      x={x} y={y}
+      fill="#6B7280"
+      textAnchor={x > cx ? 'start' : 'end'}
+      dominantBaseline="central"
+      fontSize={10}
+      fontFamily="Plus Jakarta Sans"
+      fontWeight={600}
+    >
+      {`${(percent * 100).toFixed(0)}%`}
+    </text>
+  )
+}
+
 export default function SpendPie({ expenses }) {
-  // Group by category using joined data from Supabase
   const catMap = {}
   expenses.forEach(e => {
     const name  = e.categories?.name  || 'Other'
@@ -26,49 +87,88 @@ export default function SpendPie({ expenses }) {
     catMap[name].value += Number(e.amount)
   })
 
-  const data = Object.values(catMap)
+  const data  = Object.values(catMap).sort((a, b) => b.value - a.value)
+  const total = data.reduce((s, d) => s + d.value, 0)
+
   if (!data.length) return null
 
-  return (
-    <div className="glass rounded-3xl p-6 shadow-lg">
-      <h2 className="text-sm font-bold text-gray-600 mb-4 flex items-center gap-2 uppercase tracking-wider">
-        <PieIcon size={15} color="#4169E1" />
-        Spend by Category
-      </h2>
+  const bigSlices   = data.filter(d => d.value / total >= 0.05)
+  const smallSlices = data.filter(d => d.value / total < 0.05)
 
-      <ResponsiveContainer width="100%" height={210}>
+  return (
+    <div className="card p-5">
+      <div className="flex items-center gap-2 mb-2">
+        <PieIcon size={14} color="#2563EB" strokeWidth={2.5} />
+        <span className="section-label">By Category</span>
+      </div>
+
+      <ResponsiveContainer width="100%" height={200}>
         <PieChart>
           <Pie
             data={data}
             cx="50%"
             cy="50%"
-            innerRadius={55}
+            innerRadius={62}
             outerRadius={88}
-            paddingAngle={3}
+            paddingAngle={2}
             dataKey="value"
             stroke="none"
+            labelLine={false}
+            label={renderCustomLabel}
           >
             {data.map(entry => (
               <Cell key={entry.name} fill={entry.color} />
             ))}
           </Pie>
           <Tooltip content={<CustomTooltip />} />
+          {/* Center label — uses foreignObject trick via recharts customized label */}
+          <text
+            x="50%" y="46%"
+            textAnchor="middle"
+            fill="#6B7280"
+            fontSize={10}
+            fontFamily="Plus Jakarta Sans"
+            fontWeight={700}
+            letterSpacing="0.08em"
+          >
+            TOTAL
+          </text>
+          <text
+            x="50%" y="56%"
+            textAnchor="middle"
+            fill="#0F1117"
+            fontSize={13}
+            fontFamily="IBM Plex Mono"
+            fontWeight={600}
+          >
+            {pkr(total)}
+          </text>
         </PieChart>
       </ResponsiveContainer>
 
-      {/* Legend */}
-      <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-3">
-        {data.map(({ name, value, color }) => (
-          <div key={name} className="flex items-center gap-1.5 text-xs text-gray-600">
-            <span
-              className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-              style={{ background: color }}
-            />
-            <span className="font-semibold">{name}</span>
-            <span className="text-gray-400">{pkr(value)}</span>
+      {/* Legend — big slices inline, small slices in compact row */}
+      <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-1">
+        {bigSlices.map(({ name, color, value }) => (
+          <div key={name} className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: color }} />
+            <span className="text-xs font-semibold text-ink">{name}</span>
+            <span className="font-mono text-xs" style={{ color: '#6B7280' }}>{pkr(value)}</span>
           </div>
         ))}
       </div>
+
+      {/* Small slices */}
+      {smallSlices.length > 0 && (
+        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 pt-1.5 border-t border-border">
+          {smallSlices.map(({ name, color, value }) => (
+            <div key={name} className="flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: color }} />
+              <span className="text-xs text-slate">{name}</span>
+              <span className="font-mono text-xs text-slate">{pkr(value)}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

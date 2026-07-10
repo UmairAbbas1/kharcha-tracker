@@ -4,8 +4,8 @@ export default {
   theme: {
     // ── Override default font family everywhere ──────────────
     fontFamily: {
-      sans:  ['"Plus Jakarta Sans"', 'system-ui', '-apple-system', 'sans-serif'],
-      mono:  ['"IBM Plex Mono"', 'ui-monospace', 'monospace'],
+      sans:  ['"Plus Jakarta Sans"'],
+      mono:  ['"IBM Plex Mono"'],
     },
     extend: {
       colors: {

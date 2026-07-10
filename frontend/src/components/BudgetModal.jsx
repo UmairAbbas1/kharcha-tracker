@@ -91,11 +91,11 @@ function BudgetRow({ label, color, icon, spent, budget, onSave, onDelete }) {
 
   const ringColor = flash === 'ok'  ? '0 0 0 2px #22c55e'
                   : flash === 'err' ? '0 0 0 2px #ef4444'
-                  : saving          ? '0 0 0 2px #4169E133'
+                  : saving          ? '0 0 0 2px #2563EB33'
                   : undefined
 
   return (
-    <div className="flex flex-col gap-0.5 rounded-2xl bg-white/60 border border-blue-50 px-4 py-3 hover:bg-white/80 transition">
+    <div className="flex flex-col gap-0.5 rounded-xl bg-surface border border-border px-4 py-3 hover:bg-white transition">
       {/* Top row: label + input */}
       <div className="flex items-center gap-3">
         {/* Category dot / icon */}
@@ -125,7 +125,7 @@ function BudgetRow({ label, color, icon, spent, budget, onSave, onDelete }) {
             onBlur={commit}
             onKeyDown={handleKeyDown}
             disabled={saving}
-            className="w-28 rounded-xl border border-blue-100 bg-white/80 px-3 py-1.5
+            className="w-28 rounded-2xl border border-border bg-white px-3 py-1.5
                        text-sm text-gray-700 placeholder-gray-300 text-right
                        disabled:opacity-50 transition"
             style={{ boxShadow: ringColor }}
@@ -250,16 +250,16 @@ export default function BudgetModal({ workspaceId, categories, expenses, onClose
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(4px)' }}
+      style={{ background: 'rgba(0,0,0,0.35)' }}
       onClick={handleBackdrop}
     >
-      <div className="glass rounded-3xl shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh]">
+      <div className="card-panel w-full max-w-lg flex flex-col max-h-[90vh]">
 
         {/* ── Header ── */}
-        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-blue-50 flex-shrink-0">
+        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-border flex-shrink-0">
           <div className="flex items-center gap-2.5">
-            <Wallet size={18} color="#4169E1" />
-            <h2 className="text-base font-extrabold text-gray-800 tracking-tight">
+            <Wallet size={18} color="#2563EB" />
+            <h2 className="text-base font-bold text-ink tracking-tight">
               Budget Settings
             </h2>
           </div>
@@ -290,7 +290,7 @@ export default function BudgetModal({ workspaceId, categories, expenses, onClose
                 </p>
                 <BudgetRow
                   label="All Categories Combined"
-                  color="#4169E1"
+                  color="#2563EB"
                   icon="Wallet"
                   spent={totalSpend}
                   budget={budgetFor(null)}
@@ -324,7 +324,7 @@ export default function BudgetModal({ workspaceId, categories, expenses, onClose
         </div>
 
         {/* ── Footer ── */}
-        <div className="px-6 py-4 border-t border-blue-50 flex-shrink-0">
+        <div className="px-6 py-4 border-t border-border flex-shrink-0">
           <p className="text-xs text-gray-400 text-center mb-3">
             Type an amount and press <kbd className="bg-gray-100 px-1.5 py-0.5 rounded text-gray-500">Enter</kbd> or click away to save.
             Clear a field to remove the budget.
@@ -332,7 +332,7 @@ export default function BudgetModal({ workspaceId, categories, expenses, onClose
           <button
             onClick={handleClose}
             className="w-full rounded-2xl py-2.5 text-sm font-bold text-white shadow-md transition-all active:scale-95"
-            style={{ background: '#4169E1' }}
+            style={{ background: '#2563EB' }}
           >
             Done
           </button>

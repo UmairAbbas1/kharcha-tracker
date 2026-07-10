@@ -6,26 +6,26 @@ const pkr = (n) => `Rs ${Number(n).toLocaleString('en-PK')}`
 const CONFIG = {
   100: {
     icon:      AlertOctagon,
-    bg:        'bg-red-50',
-    border:    'border-red-300',
-    text:      'text-red-700',
-    iconColor: '#dc2626',
+    bg:        'bg-rupee-subtle',
+    border:    'border-rupee-light',
+    text:      'text-rupee-dark',
+    iconColor: '#E85D2F',
     label:     'Budget Exceeded',
   },
   90: {
     icon:      AlertTriangle,
     bg:        'bg-orange-50',
-    border:    'border-orange-300',
-    text:      'text-orange-700',
-    iconColor: '#ea580c',
+    border:    'border-orange-200',
+    text:      'text-orange-800',
+    iconColor: '#FB923C',
     label:     'Budget Critical',
   },
   80: {
     icon:      AlertTriangle,
     bg:        'bg-amber-50',
-    border:    'border-amber-300',
-    text:      'text-amber-700',
-    iconColor: '#d97706',
+    border:    'border-amber-200',
+    text:      'text-amber-800',
+    iconColor: '#F59E0B',
     label:     'Budget Warning',
   },
 }
@@ -42,7 +42,7 @@ function Banner({ log, onDismiss }) {
 
   return (
     <div
-      className={`flex items-start gap-3 rounded-2xl border px-4 py-3
+      className={`flex items-start gap-3 rounded-xl border px-4 py-3
                   ${cfg.bg} ${cfg.border} ${cfg.text}`}
     >
       <Icon size={16} color={cfg.iconColor} className="flex-shrink-0 mt-0.5" />

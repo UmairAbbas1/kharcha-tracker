@@ -42,17 +42,13 @@ export default function AuthPage() {
 
   return (
     <>
-      {/* Ambient blobs */}
-      <div className="blob w-96 h-96 bg-royal" style={{ top: '-80px', left: '-80px' }} />
-      <div className="blob w-80 h-80 bg-blush" style={{ bottom: '-60px', right: '-60px' }} />
-
       <div className="relative z-10 min-h-screen flex items-center justify-center px-4 py-12">
-        <div className="glass rounded-4xl p-8 md:p-10 shadow-2xl w-full max-w-md">
+        <div className="card p-8 md:p-10 shadow-panel w-full max-w-md">
           <div className="text-center mb-8">
             <div className="flex items-center justify-center gap-3 mb-2">
-              <KharchaLogo size={44} />
+              <KharchaLogo size={44} color="#2563EB" />
             </div>
-            <h1 className="text-3xl font-extrabold tracking-tight" style={{ color: '#4169E1' }}>
+            <h1 className="text-3xl font-bold tracking-tight" style={{ color: '#0F1117' }}>
               Kharcha Tracker
             </h1>
             <p className="text-sm text-gray-500 mt-2">
@@ -106,7 +102,7 @@ export default function AuthPage() {
               type="submit"
               disabled={loading}
               className="w-full rounded-2xl py-2.5 text-sm font-bold text-white flex items-center justify-center gap-2 shadow-md transition-all active:scale-95 disabled:opacity-60"
-              style={{ background: '#4169E1' }}
+              style={{ background: '#2563EB' }}
             >
               {mode === 'login' ? (
                 <>
