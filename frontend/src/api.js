@@ -3,9 +3,23 @@ import { supabase } from './lib/supabase'
 const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000'
 
 // Helper: get current session token for backend calls
+// Uses refreshSession to ensure the token is never stale
 async function getToken() {
+  // Try to get existing session first
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) throw new Error('Not authenticated')
+
+  // If token expires in less than 60 seconds, refresh it proactively
+  const expiresAt  = session.expires_at * 1000   // convert to ms
+  const nowMs      = Date.now()
+  const secsLeft   = (expiresAt - nowMs) / 1000
+
+  if (secsLeft < 60) {
+    const { data: refreshed, error } = await supabase.auth.refreshSession()
+    if (error || !refreshed.session) throw new Error('Session expired. Please sign in again.')
+    return refreshed.session.access_token
+  }
+
   return session.access_token
 }
 
@@ -135,7 +149,8 @@ export async function scanReceipt(dataUri, categories = []) {
  *
  * Uses FormData (not JSON) because the payload is a binary file.
  */
-export async function scanVoice(audioBlob, categories = []) {  const token = await getToken()
+export async function scanVoice(audioBlob, categories = []) {
+  const token = await getToken()
 
   const form = new FormData()
   form.append('audio',      audioBlob, 'recording.webm')

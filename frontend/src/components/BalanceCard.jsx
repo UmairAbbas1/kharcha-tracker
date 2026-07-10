@@ -45,7 +45,7 @@ export default function BalanceCard({ total, count, loading }) {
     >
       <div className="relative">
         {/* Label */}
-        <p className="section-label text-white/60 mb-3">
+        <p className="section-label mb-3" style={{ color: 'rgba(255,255,255,0.65)' }}>
           Total Spend This Month
         </p>
 
