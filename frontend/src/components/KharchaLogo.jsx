@@ -1,78 +1,52 @@
 /**
  * KharchaLogo.jsx
- * Abstract geometric SVG logo for Kharcha Tracker.
+ * Abstract geometric SVG mark — a stylised ₨ ligature.
  *
- * Design: Two overlapping tilted squares (rhombuses) in royal blue + pink,
- * with a small coin circle, forming a stylised "K" motif.
- * Works in light and dark mode.
+ * Two elements:
+ *   1. A heavy vertical bar (the R-stem of ₨)
+ *   2. A diagonal stroke crossing it (the descender), terminating in a small disc
+ *
+ * Uses currentColor so it inherits from the parent's color property.
+ * Works as favicon (16px), app header (32px), auth page (48px+).
  *
  * Props:
- *   size      — number (default 32), controls both width and height
- *   variant   — "color" (default) | "mono" (single royal blue)
- *   className — extra Tailwind/CSS classes
+ *   size      — px (default 32)
+ *   color     — explicit hex/rgb, or omit to use currentColor
+ *   className — additional classes
  */
-
-export default function KharchaLogo({ size = 32, variant = 'color', className = '' }) {
-  const royal = '#4169E1'
-  const pink  = variant === 'color' ? '#F7A8C4' : royal
-  const white = variant === 'color' ? '#ffffff'  : royal
+export default function KharchaLogo({ size = 32, color, className = '' }) {
+  const c = color || 'currentColor'
 
   return (
     <svg
       width={size}
       height={size}
-      viewBox="0 0 48 48"
+      viewBox="0 0 40 40"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className={className}
       aria-label="Kharcha Tracker"
       role="img"
     >
-      {/* Large royal blue rhombus — left/back */}
-      <rect
-        x="4"
-        y="4"
-        width="22"
-        height="22"
-        rx="4"
-        fill={royal}
-        transform="rotate(12 15 15)"
-        opacity="0.95"
+      {/* ── Vertical stem (R bar) ── */}
+      <rect x="8" y="6" width="5" height="28" rx="2.5" fill={c} />
+
+      {/* ── Top crossbar ── */}
+      <rect x="8" y="6" width="16" height="5" rx="2.5" fill={c} />
+
+      {/* ── Mid crossbar (shorter — creates the ₨ double-bar) ── */}
+      <rect x="8" y="15" width="12" height="4" rx="2" fill={c} />
+
+      {/* ── Diagonal leg — from mid-right, sweeps to bottom-right ── */}
+      <path
+        d="M 20 19 L 31 33"
+        stroke={c}
+        strokeWidth="4.5"
+        strokeLinecap="round"
       />
 
-      {/* Small pink rhombus — right/front overlap */}
-      <rect
-        x="22"
-        y="18"
-        width="18"
-        height="18"
-        rx="4"
-        fill={pink}
-        transform="rotate(-12 31 27)"
-        opacity="0.90"
-      />
-
-      {/* Coin circle — accent, sits at intersection */}
-      <circle
-        cx="26"
-        cy="20"
-        r="6"
-        fill={white}
-        opacity="0.92"
-      />
-
-      {/* Rs symbol inside coin */}
-      <text
-        x="26"
-        y="24"
-        textAnchor="middle"
-        fontSize="7"
-        fontWeight="800"
-        fontFamily="'Segoe UI', system-ui, sans-serif"
-        fill={royal}
-      >
-        ₨
-      </text>
+      {/* ── Terminal disc at bottom of diagonal ── */}
+      <circle cx="31" cy="33" r="3" fill={c} />
     </svg>
   )
 }
