@@ -201,6 +201,8 @@ export default function DashboardPage() {
                 expenses={expenses}
                 onDelete={removeExpense}
                 loading={loading}
+                workspaceId={activeWorkspace?.id}
+                currentMonth={currentMonth}
               />
             </div>
           </div>

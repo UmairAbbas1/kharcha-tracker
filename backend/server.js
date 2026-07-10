@@ -9,6 +9,7 @@ import { scanReceipt }          from './ocr/receiptScanner.js'
 import { transcribeAndExtract } from './ocr/voiceScanner.js'
 import { parseAndExtract }      from './ocr/smsParser.js'
 import { run as runSummaries, previousMonth } from './summaries/summaryEngine.js'
+import { getActiveProvider }    from './ocr/providerFactory.js'
 import multer from 'multer'
 
 // multer — memory storage, 10 MB limit, audio files only
@@ -475,7 +476,7 @@ app.post('/api/scan-voice', requireAuth, upload.single('audio'), async (req, res
   }
 })
 
-// ── POST /api/scan-receipt — OCR a receipt image via Groq ────
+// ── POST /api/scan-receipt — OCR a receipt image (provider-agnostic) ─
 app.post('/api/scan-receipt', requireAuth, async (req, res) => {
   const { image, categories } = req.body
 
@@ -483,7 +484,8 @@ app.post('/api/scan-receipt', requireAuth, async (req, res) => {
     return res.status(400).json({ success: false, error: 'No image provided' })
 
   try {
-    const data = await scanReceipt(image, categories || [])
+    const provider = getActiveProvider()
+    const data     = await provider.scan(image, categories || [])
     console.log('[scan-receipt] extracted:', data)
     res.json({ success: true, data, hint: 'Please verify before saving' })
   } catch (err) {
@@ -652,6 +654,169 @@ app.get('/api/alert-logs', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('[GET /api/alert-logs]', err)
     res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// ── GET /api/export — styled Excel (.xlsx) download ──────────
+app.get('/api/export', requireAuth, async (req, res) => {
+  const { workspace_id, month } = req.query
+
+  if (!workspace_id)
+    return res.status(400).json({ success: false, error: 'workspace_id is required' })
+
+  if (month && !/^\d{4}-\d{2}$/.test(month))
+    return res.status(400).json({ success: false, error: 'month must be YYYY-MM' })
+
+  try {
+    // ── Fetch expenses ──────────────────────────────────────
+    let query = req.supabase
+      .from('expenses')
+      .select('date, title, amount, categories(name, color)')
+      .eq('workspace_id', workspace_id)
+      .is('deleted_at', null)
+      .order('date',       { ascending: false })
+      .order('created_at', { ascending: false })
+
+    if (month) {
+      const [y, m]  = month.split('-')
+      const lastDay = new Date(Number(y), Number(m), 0).getDate()
+      query = query
+        .gte('date', `${month}-01`)
+        .lte('date', `${month}-${String(lastDay).padStart(2, '0')}`)
+    }
+
+    const { data: expenses, error: expErr } = await query
+    if (expErr) throw expErr
+
+    // ── Workspace name for filename ─────────────────────────
+    const { data: ws } = await req.supabase
+      .from('workspaces').select('name').eq('id', workspace_id).maybeSingle()
+
+    const wName   = (ws?.name || 'workspace').replace(/[^a-z0-9]/gi, '-').toLowerCase()
+    const suffix  = month || 'all'
+    const filename = `kharcha-${wName}-${suffix}.xlsx`
+
+    // ── Build Excel workbook with ExcelJS ───────────────────
+    const ExcelJS = (await import('exceljs')).default
+    const wb      = new ExcelJS.Workbook()
+    wb.creator    = 'Kharcha Tracker'
+    wb.created    = new Date()
+
+    const ws2 = wb.addWorksheet('Expenses', {
+      pageSetup: { fitToPage: true, orientation: 'portrait' },
+      views:     [{ state: 'frozen', ySplit: 1 }],   // freeze header row
+    })
+
+    // ── Column definitions ──────────────────────────────────
+    ws2.columns = [
+      { header: 'Date',           key: 'date',     width: 14 },
+      { header: 'Title',          key: 'title',    width: 32 },
+      { header: 'Category',       key: 'category', width: 16 },
+      { header: 'Amount (PKR)',   key: 'amount',   width: 16 },
+    ]
+
+    // ── Header row styling (royal blue) ────────────────────
+    const ROYAL    = '4169E1'
+    const PINK     = 'F7A8C4'
+    const LIGHT_BG = 'EEF2FF'
+    const STRIPE   = 'F5F7FF'
+
+    const headerRow = ws2.getRow(1)
+    headerRow.eachCell(cell => {
+      cell.fill   = { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${ROYAL}` } }
+      cell.font   = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11, name: 'Calibri' }
+      cell.alignment = { vertical: 'middle', horizontal: 'center' }
+      cell.border = {
+        bottom: { style: 'medium', color: { argb: `FF${ROYAL}` } },
+      }
+    })
+    headerRow.height = 24
+
+    // ── Data rows ───────────────────────────────────────────
+    const rows = (expenses || [])
+    let totalAmount = 0
+
+    rows.forEach((e, idx) => {
+      const row = ws2.addRow({
+        date:     e.date,             // will format below
+        title:    e.title,
+        category: e.categories?.name || 'Other',
+        amount:   Number(e.amount),
+      })
+
+      totalAmount += Number(e.amount)
+
+      // Alternating row background
+      const bg = idx % 2 === 0 ? `FF${LIGHT_BG}` : `FF${STRIPE}`
+      row.eachCell(cell => {
+        cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } }
+        cell.font      = { size: 11, name: 'Calibri' }
+        cell.alignment = { vertical: 'middle' }
+        cell.border    = {
+          bottom: { style: 'hair', color: { argb: 'FFD0D8F0' } },
+        }
+      })
+
+      // Date cell — proper date format, no ######
+      const dateCell = row.getCell('date')
+      dateCell.value       = new Date(e.date + 'T00:00:00')
+      dateCell.numFmt      = 'DD-MMM-YYYY'
+      dateCell.alignment   = { horizontal: 'center', vertical: 'middle' }
+
+      // Amount cell — number format with comma separator
+      const amtCell = row.getCell('amount')
+      amtCell.numFmt    = '#,##0'
+      amtCell.alignment = { horizontal: 'right', vertical: 'middle' }
+      amtCell.font      = { bold: true, color: { argb: `FF${ROYAL}` }, size: 11, name: 'Calibri' }
+
+      // Category cell — centered
+      row.getCell('category').alignment = { horizontal: 'center', vertical: 'middle' }
+
+      row.height = 20
+    })
+
+    // ── Total row ───────────────────────────────────────────
+    if (rows.length > 0) {
+      ws2.addRow({})  // blank spacer
+
+      const totalRow = ws2.addRow({
+        date:     '',
+        title:    `Total — ${rows.length} expense${rows.length !== 1 ? 's' : ''}`,
+        category: '',
+        amount:   totalAmount,
+      })
+      totalRow.eachCell(cell => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${PINK}` } }
+        cell.font = { bold: true, size: 11, name: 'Calibri', color: { argb: 'FF1E1E32' } }
+        cell.alignment = { vertical: 'middle' }
+      })
+      const totalAmt = totalRow.getCell('amount')
+      totalAmt.numFmt   = '#,##0'
+      totalAmt.alignment = { horizontal: 'right', vertical: 'middle' }
+      totalRow.getCell('title').alignment = { horizontal: 'left', vertical: 'middle' }
+      totalRow.height = 22
+    }
+
+    // ── Branding row at bottom ──────────────────────────────
+    ws2.addRow({})
+    const brandRow = ws2.addRow({ title: 'Generated by Kharcha Tracker · kharcha-tracker.vercel.app' })
+    brandRow.getCell('title').font = {
+      italic: true, color: { argb: 'FF9CA3AF' }, size: 10, name: 'Calibri'
+    }
+
+    // ── Stream response ─────────────────────────────────────
+    res.setHeader('Content-Type',        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+
+    await wb.xlsx.write(res)
+    res.end()
+
+  } catch (err) {
+    console.error('[GET /api/export]', err)
+    // Only send JSON error if headers not yet sent
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, error: err.message })
+    }
   }
 })
 

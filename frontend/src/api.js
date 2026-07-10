@@ -310,3 +310,44 @@ export async function getMonthlySummary(workspaceId, month) {
 
   return res.json()
 }
+
+// ── CSV Export ────────────────────────────────────────────────────────
+/**
+ * Downloads a CSV of expenses for a workspace.
+ * Triggers a file download directly in the browser — no data returned.
+ *
+ * @param {string} workspaceId
+ * @param {string} [month]  — "YYYY-MM" (optional, omit for all expenses)
+ * @param {string} [filename] — override the suggested filename
+ */
+export async function exportCsv(workspaceId, month, filename) {
+  const token = await getToken()
+
+  const params = new URLSearchParams({ workspace_id: workspaceId })
+  if (month) params.set('month', month)
+
+  const res = await fetch(`${BACKEND}/api/export?${params}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Export failed (${res.status}): ${text.slice(0, 100)}`)
+  }
+
+  // Get suggested filename from Content-Disposition, fall back to param
+  const disposition = res.headers.get('content-disposition') || ''
+  const match       = disposition.match(/filename="([^"]+)"/)
+  const dlName      = filename || match?.[1] || `kharcha-export-${month || 'all'}.xlsx`
+
+  // Trigger browser download without navigation
+  const blob = await res.blob()
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href     = url
+  a.download = dlName
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
