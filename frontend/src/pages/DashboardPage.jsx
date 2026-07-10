@@ -2,29 +2,39 @@ import { useState, useEffect, useCallback } from 'react'
 import { useAuth }      from '../context/AuthContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { useExpenses }  from '../hooks/useExpenses'
-import { getCategories, getAlertLogs } from '../api'
-import BalanceCard   from '../components/BalanceCard'
-import AddForm       from '../components/AddForm'
-import SpendPie      from '../components/SpendPie'
-import SpendBar      from '../components/SpendBar'
-import ExpenseList   from '../components/ExpenseList'
-import BudgetBanner  from '../components/BudgetBanner'
-import BudgetModal   from '../components/BudgetModal'
-import BottomSheet   from '../components/BottomSheet'
-import KharchaLogo   from '../components/KharchaLogo'
+import { getCategories, getAlertLogs, getMonthlySummary } from '../api'
+import BalanceCard        from '../components/BalanceCard'
+import AddForm            from '../components/AddForm'
+import SpendPie           from '../components/SpendPie'
+import SpendBar           from '../components/SpendBar'
+import ExpenseList        from '../components/ExpenseList'
+import BudgetBanner       from '../components/BudgetBanner'
+import BudgetModal        from '../components/BudgetModal'
+import BottomSheet        from '../components/BottomSheet'
+import KharchaLogo        from '../components/KharchaLogo'
+import MonthlySummaryCard from '../components/MonthlySummaryCard'
 import { LogOut, Wallet, Plus } from 'lucide-react'
 
 export default function DashboardPage() {
   const { signOut, user }                          = useAuth()
   const { activeWorkspace, workspaces, switchWorkspace } = useWorkspace()
 
-  const [categories,   setCategories]   = useState([])
-  const [alertLogs,    setAlertLogs]    = useState([])
-  const [catLoading,   setCatLoading]   = useState(true)
-  const [error,        setError]        = useState(null)
-  const [budgetOpen,   setBudgetOpen]   = useState(false)
-  const [sheetOpen,    setSheetOpen]    = useState(false)
-  const [prefill,      setPrefill]      = useState(null)
+  const [categories,      setCategories]      = useState([])
+  const [alertLogs,       setAlertLogs]       = useState([])
+  const [monthlySummary,  setMonthlySummary]  = useState(null)
+  const [catLoading,      setCatLoading]      = useState(true)
+  const [error,           setError]           = useState(null)
+  const [budgetOpen,      setBudgetOpen]      = useState(false)
+  const [sheetOpen,       setSheetOpen]       = useState(false)
+  const [prefill,         setPrefill]         = useState(null)
+
+  // Previous month for summary card (always show last month's summary)
+  const prevMonth = (() => {
+    const d = new Date()
+    d.setDate(1)
+    d.setMonth(d.getMonth() - 1)
+    return d.toISOString().slice(0, 7)
+  })()
 
   const currentMonth = new Date().toISOString().slice(0, 7)
 
@@ -47,8 +57,12 @@ export default function DashboardPage() {
       setError(null)
       const catRes = await getCategories(activeWorkspace.id)
       setCategories(catRes.data)
+      // Fire alert logs and monthly summary fetches in parallel (non-blocking)
       getAlertLogs(activeWorkspace.id, currentMonth)
         .then(r => setAlertLogs(r.data || []))
+        .catch(() => {})
+      getMonthlySummary(activeWorkspace.id, prevMonth)
+        .then(r => setMonthlySummary(r.data || null))
         .catch(() => {})
     } catch (err) {
       console.error('[DashboardPage] fetch error:', err)
@@ -164,6 +178,15 @@ export default function DashboardPage() {
 
         <div className="max-w-4xl mx-auto space-y-5">
           <BudgetBanner alertLogs={alertLogs} />
+
+          {/* Monthly AI summary card — previous month, dismissible */}
+          {monthlySummary && (
+            <MonthlySummaryCard
+              summary={monthlySummary}
+              momChange={null}
+            />
+          )}
+
           <BalanceCard total={total} count={expenses.length} loading={loading} />
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">

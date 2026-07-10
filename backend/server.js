@@ -8,6 +8,7 @@ import { evaluate }             from './alerts/alertEngine.js'
 import { scanReceipt }          from './ocr/receiptScanner.js'
 import { transcribeAndExtract } from './ocr/voiceScanner.js'
 import { parseAndExtract }      from './ocr/smsParser.js'
+import { run as runSummaries, previousMonth } from './summaries/summaryEngine.js'
 import multer from 'multer'
 
 // multer — memory storage, 10 MB limit, audio files only
@@ -328,6 +329,76 @@ app.delete('/api/workspace/:workspaceId/members/:userId', requireAuth, async (re
     console.error('[DELETE /members]', err)
     res.status(500).json({ success: false, error: err.message })
   }
+})
+
+// ── POST /api/generate-monthly-summary — cron-triggered ─────
+app.post('/api/generate-monthly-summary', async (req, res) => {
+  // Authenticate via shared CRON_SECRET
+  const authHeader = req.headers.authorization || ''
+  const token      = authHeader.replace(/^Bearer\s+/i, '').trim()
+  const secret     = process.env.CRON_SECRET
+
+  if (!secret || token !== secret) {
+    return res.status(401).json({ success: false, error: 'Unauthorized' })
+  }
+
+  if (!process.env.GROQ_API_KEY) {
+    return res.status(503).json({ success: false, error: 'GROQ_API_KEY not configured' })
+  }
+
+  // Validate optional month param
+  const { month } = req.body
+  if (month && !/^\d{4}-\d{2}$/.test(month)) {
+    return res.status(400).json({ success: false, error: 'month must be YYYY-MM' })
+  }
+
+  try {
+    const targetMonth = month || previousMonth()
+    const result      = await runSummaries(targetMonth)
+    res.json({ success: true, month: targetMonth, ...result })
+  } catch (err) {
+    const status = err.status || 500
+    console.error('[POST /api/generate-monthly-summary]', err.message)
+    res.status(status).json({ success: false, error: err.message })
+  }
+})
+
+// ── GET /api/monthly-summary — fetch one workspace's summary ─
+app.get('/api/monthly-summary', requireAuth, async (req, res) => {
+  const { workspace_id, month } = req.query
+
+  if (!workspace_id) {
+    return res.status(400).json({ success: false, error: 'workspace_id required' })
+  }
+
+  // Validate user is a member of this workspace
+  const { data: membership } = await req.supabase
+    .from('workspace_members')
+    .select('role')
+    .eq('workspace_id', workspace_id)
+    .eq('user_id', req.user.id)
+    .maybeSingle()
+
+  if (!membership) {
+    return res.status(403).json({ success: false, error: 'Not a member of this workspace' })
+  }
+
+  // Default to previous month if not specified
+  const targetMonth = month || previousMonth()
+
+  const { data, error } = await req.supabase
+    .from('monthly_summaries')
+    .select('*')
+    .eq('workspace_id', workspace_id)
+    .eq('month', targetMonth)
+    .maybeSingle()
+
+  if (error) {
+    console.error('[GET /api/monthly-summary]', error)
+    return res.status(500).json({ success: false, error: error.message })
+  }
+
+  res.json({ success: true, data: data || null })
 })
 
 // ── POST /api/scan-sms — hybrid SMS expense extraction ───────

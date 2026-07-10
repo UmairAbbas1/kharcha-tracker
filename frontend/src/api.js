@@ -283,3 +283,30 @@ export async function getAlertLogs(workspaceId, month) {
 
   return res.json()
 }
+
+// ── Monthly Summary ───────────────────────────────────────────────────
+/**
+ * Fetch the monthly AI summary for a workspace.
+ * Defaults to previous month on the backend if month is omitted.
+ *
+ * @param {string} workspaceId
+ * @param {string} month  — "YYYY-MM" (optional)
+ * @returns {Promise<{ success: boolean, data: object|null }>}
+ */
+export async function getMonthlySummary(workspaceId, month) {
+  const token = await getToken()
+
+  const params = new URLSearchParams({ workspace_id: workspaceId })
+  if (month) params.set('month', month)
+
+  const res = await fetch(`${BACKEND}/api/monthly-summary?${params}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || 'Failed to fetch monthly summary')
+  }
+
+  return res.json()
+}
