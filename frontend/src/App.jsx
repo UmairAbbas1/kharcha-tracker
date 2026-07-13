@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { AuthProvider, useAuth }       from './context/AuthContext'
+import { AuthProvider, useAuth }           from './context/AuthContext'
 import { WorkspaceProvider, useWorkspace } from './context/WorkspaceContext'
-import AuthPage       from './pages/AuthPage'
-import DashboardPage  from './pages/DashboardPage'
-import Sidebar        from './components/Sidebar'
+import AuthPage      from './pages/AuthPage'
+import DashboardPage from './pages/DashboardPage'
+import ExpensesPage  from './pages/ExpensesPage'
+import Sidebar       from './components/Sidebar'
 
 // ── Module placeholder component ─────────────────────────────────────
 function ComingSoon({ label }) {
@@ -50,7 +51,7 @@ function AppInner() {
   const renderModule = () => {
     switch (activeModule) {
       case 'dashboard': return <DashboardPage />
-      case 'expenses':  return <ComingSoon label="Expenses" />
+      case 'expenses':  return <ExpensesPage />
       case 'budgets':   return <ComingSoon label="Budgets" />
       case 'insights':  return <ComingSoon label="Smart Insights" />
       case 'analytics': return <ComingSoon label="Analytics" />
