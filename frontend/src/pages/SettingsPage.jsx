@@ -13,9 +13,11 @@ export default function SettingsPage({ darkMode, onToggleDarkMode }) {
   const { activeWorkspace } = useWorkspace()
   
   // Stored preferences state
-  const [saveReceipts, setSaveReceipts] = useState(
-    localStorage.getItem('kharcha_save_receipts') === 'true'
-  )
+  const [saveReceipts, setSaveReceipts] = useState(() => {
+    const stored = localStorage.getItem('kharcha_save_receipts')
+    if (stored === null) return true // default to ON
+    return stored === 'true'
+  })
   const [saving, setSaving] = useState(false)
   const [success, setSuccess] = useState(false)
 

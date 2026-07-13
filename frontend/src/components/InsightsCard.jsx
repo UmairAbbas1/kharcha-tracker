@@ -11,7 +11,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Send, Loader2, ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
 import VoiceRecorder from './VoiceRecorder'
-import { askAssistant } from '../api'
+import { askAssistant, getCategories } from '../api'
 
 const MAX_HISTORY = 5
 
@@ -106,14 +106,26 @@ function TurnBubble({ turn }) {
   )
 }
 
-export default function InsightsCard({ workspaceId, categories = [], autoFocus, onClearAutoFocus }) {
+export default function InsightsCard({ workspaceId, categories: propCategories = [], autoFocus, onClearAutoFocus }) {
   const [history,  setHistory]  = useState([])
   const [input,    setInput]    = useState('')
   const [status,   setStatus]   = useState('idle')   // idle | thinking | error
   const [phIdx,    setPhIdx]    = useState(0)
+  const [categories, setCategories] = useState(propCategories)
   const inputRef   = useRef(null)
   const bottomRef  = useRef(null)
-  const categoryNames = categories.map(c => c.name)
+
+  useEffect(() => {
+    if (propCategories && propCategories.length > 0) {
+      setCategories(propCategories)
+    } else if (workspaceId) {
+      getCategories(workspaceId)
+        .then(res => setCategories(res.data || []))
+        .catch(() => {})
+    }
+  }, [propCategories, workspaceId])
+
+  const categoryNames = categories.map(c => c.name || c)
 
   // Rotate placeholder
   useEffect(() => {

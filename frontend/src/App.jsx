@@ -67,7 +67,7 @@ function AppInner() {
   const [darkMode, setDarkMode] = useState(() => {
     const stored = localStorage.getItem('kharcha_theme')
     if (stored) return stored === 'dark'
-    return window.matchMedia('(prefers-color-scheme: dark)').matches
+    return false // default to light mode
   })
 
   // Sync dark mode class on root element
@@ -282,7 +282,7 @@ function AppInner() {
                 Ask questions in Urdu, English, or Roman Urdu about your spending history.
               </p>
             </header>
-            <InsightsCard autoFocus={true} />
+            <InsightsCard workspaceId={activeWorkspace?.id} autoFocus={true} />
           </div>
         </div>
       )

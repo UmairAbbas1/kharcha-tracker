@@ -23,9 +23,11 @@ export default function ReceiptVaultPage() {
   const [error, setError] = useState(null)
   
   // Settings toggle
-  const [saveReceipts, setSaveReceipts] = useState(
-    localStorage.getItem('kharcha_save_receipts') === 'true'
-  )
+  const [saveReceipts, setSaveReceipts] = useState(() => {
+    const stored = localStorage.getItem('kharcha_save_receipts')
+    if (stored === null) return true // default to ON
+    return stored === 'true'
+  })
 
   // Filters state
   const [searchQuery, setSearchQuery] = useState('')
@@ -55,7 +57,14 @@ export default function ReceiptVaultPage() {
         .not('receipt_url', 'is', null)
         .order('date', { ascending: false })
 
-      if (expError) throw expError
+      if (expError) {
+        if (expError.message?.includes('receipt_url') || expError.code === 'PGRST205') {
+          console.warn('[ReceiptVaultPage] receipt_url not found in schema. Retrying/falling back to empty list.')
+          setExpenses([])
+          return
+        }
+        throw expError
+      }
       setExpenses(rawExpenses || [])
     } catch (err) {
       console.error('[ReceiptVaultPage] Fetch error:', err)

@@ -695,14 +695,25 @@ app.delete('/api/expenses/:id', requireAuth, async (req, res) => {
 
   try {
     // Verify the expense belongs to a workspace the user is a member of
-    const { data: expense, error: fetchErr } = await req.supabase
+    let expenseResult = await req.supabase
       .from('expenses')
       .select('id, workspace_id, receipt_url')
       .eq('id', id)
       .is('deleted_at', null)
       .maybeSingle()
 
-    if (fetchErr) throw fetchErr
+    if (expenseResult.error && (expenseResult.error.message?.includes('receipt_url') || expenseResult.error.code === 'PGRST205')) {
+      console.warn('[DELETE /api/expenses/:id] receipt_url not found in schema. Retrying without it.')
+      expenseResult = await req.supabase
+        .from('expenses')
+        .select('id, workspace_id')
+        .eq('id', id)
+        .is('deleted_at', null)
+        .maybeSingle()
+    }
+
+    if (expenseResult.error) throw expenseResult.error
+    const expense = expenseResult.data
     if (!expense) return res.status(404).json({ success: false, error: 'Expense not found' })
 
     // Use admin client for the actual update to bypass created_by RLS restriction
@@ -1215,7 +1226,7 @@ app.post('/api/expenses', requireAuth, async (req, res) => {
 
   try {
     // Insert via user-scoped client so RLS applies (workspace membership check)
-    const { data, error } = await req.supabase
+    let result = await req.supabase
       .from('expenses')
       .insert({
         workspace_id,
@@ -1229,7 +1240,24 @@ app.post('/api/expenses', requireAuth, async (req, res) => {
       .select('*, categories(name, icon, color)')
       .single()
 
-    if (error) throw error
+    if (result.error && (result.error.message?.includes('receipt_url') || result.error.code === 'PGRST205')) {
+      console.warn('[POST /api/expenses] receipt_url not found in schema. Retrying without it.')
+      result = await req.supabase
+        .from('expenses')
+        .insert({
+          workspace_id,
+          created_by:  req.user.id,
+          category_id,
+          title:       title.trim(),
+          amount:      Number(amount),
+          date,
+        })
+        .select('*, categories(name, icon, color)')
+        .single()
+    }
+
+    if (result.error) throw result.error
+    const data = result.data
 
     // ── Respond immediately — do NOT await the alert engine ──
     res.status(201).json({ success: true, data })
