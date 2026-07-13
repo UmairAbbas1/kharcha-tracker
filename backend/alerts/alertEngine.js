@@ -139,6 +139,30 @@ async function dispatchAlert(
   // This prevents retry spam if a channel is consistently failing.
   await record(adminClient, workspaceId, categoryId, month, threshold, channels)
 
+  // Insert notifications for all owners
+  try {
+    const notificationRows = owners.map(o => ({
+      workspace_id: workspaceId,
+      user_id:      o.userId,
+      type:         'budget_threshold',
+      message:      payload.categoryName
+                    ? `${payload.categoryName} budget reached ${payload.threshold}% (spent Rs ${Number(payload.spent).toLocaleString('en-PK')} of Rs ${Number(payload.budget).toLocaleString('en-PK')}).`
+                    : `Workspace budget reached ${payload.threshold}% (spent Rs ${Number(payload.spent).toLocaleString('en-PK')} of Rs ${Number(payload.budget).toLocaleString('en-PK')}).`,
+    }))
+
+    const { error: notifErr } = await adminClient
+      .from('notifications')
+      .insert(notificationRows)
+
+    if (notifErr) {
+      console.error('[alertEngine] failed to insert notifications:', notifErr)
+    } else {
+      console.log(`[alertEngine] notifications inserted for ${notificationRows.length} owners`)
+    }
+  } catch (err) {
+    console.error('[alertEngine] notifications error:', err)
+  }
+
   console.log(`[alertEngine] alert logged — threshold=${threshold} channels=`, channels)
 }
 

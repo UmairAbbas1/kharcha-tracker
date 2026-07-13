@@ -161,6 +161,27 @@ async function processWorkspace(workspace, month, admin) {
   if (ownerMembership?.user_id) {
     const { data: { user } } = await admin.auth.admin.getUserById(ownerMembership.user_id)
     ownerEmail = user?.email || null
+
+    // Insert monthly summary notification
+    try {
+      const monthLabel = new Date(month + '-02').toLocaleDateString('en-PK', { month: 'long', year: 'numeric' })
+      const { error: notifErr } = await admin
+        .from('notifications')
+        .insert({
+          workspace_id: wid,
+          user_id:      ownerMembership.user_id,
+          type:         'monthly_summary',
+          message:      `Your AI monthly summary for ${monthLabel} is ready (total spend: Rs ${Number(metrics.totalSpend).toLocaleString('en-PK')}).`,
+        })
+
+      if (notifErr) {
+        console.error(`[summaryEngine] failed to insert notification for ${name}:`, notifErr)
+      } else {
+        console.log(`[summaryEngine] monthly summary notification inserted for ${name}`)
+      }
+    } catch (err) {
+      console.error(`[summaryEngine] notification error for ${name}:`, err)
+    }
   }
 
   // ── Send email (failure doesn't affect result) ───────────

@@ -509,7 +509,7 @@ app.delete('/api/expenses/:id', requireAuth, async (req, res) => {
     // Verify the expense belongs to a workspace the user is a member of
     const { data: expense, error: fetchErr } = await req.supabase
       .from('expenses')
-      .select('id, workspace_id')
+      .select('id, workspace_id, receipt_url')
       .eq('id', id)
       .is('deleted_at', null)
       .maybeSingle()
@@ -520,6 +520,20 @@ app.delete('/api/expenses/:id', requireAuth, async (req, res) => {
     // Use admin client for the actual update to bypass created_by RLS restriction
     if (!adminClient)
       return res.status(503).json({ success: false, error: 'Admin client not configured' })
+
+    // Delete associated receipt image from storage if present
+    if (expense.receipt_url) {
+      try {
+        const parts = expense.receipt_url.split('/receipts/')
+        if (parts.length > 1) {
+          const filePath = decodeURIComponent(parts[1])
+          await adminClient.storage.from('receipts').remove([filePath])
+          console.log(`[DELETE expense] deleted storage file: ${filePath}`)
+        }
+      } catch (err) {
+        console.warn('[DELETE expense] failed to delete storage file:', err.message)
+      }
+    }
 
     const { error: updateErr } = await adminClient
       .from('expenses')
@@ -537,7 +551,7 @@ app.delete('/api/expenses/:id', requireAuth, async (req, res) => {
 
 // ── POST /api/expenses — create expense + fire alert engine ──
 app.post('/api/expenses', requireAuth, async (req, res) => {
-  const { workspace_id, category_id, title, amount, date } = req.body
+  const { workspace_id, category_id, title, amount, date, receipt_url } = req.body
 
   // Validation
   if (!workspace_id)
@@ -562,6 +576,7 @@ app.post('/api/expenses', requireAuth, async (req, res) => {
         title:       title.trim(),
         amount:      Number(amount),
         date,
+        receipt_url: receipt_url || null,
       })
       .select('*, categories(name, icon, color)')
       .single()
@@ -897,6 +912,275 @@ app.post('/api/ask', requireAuth, async (req, res) => {
     const status = err.status || 500
     console.error('[POST /api/ask]', err.message)
     res.status(status).json({ success: false, error: err.message })
+  }
+})
+
+// ── Notifications Endpoints ──────────────────────────────────────────
+// Fetch recent notifications for user in workspace
+app.get('/api/notifications', requireAuth, async (req, res) => {
+  const { workspace_id } = req.query
+  if (!workspace_id) {
+    return res.status(400).json({ success: false, error: 'workspace_id is required' })
+  }
+
+  try {
+    const { data, error } = await req.supabase
+      .from('notifications')
+      .select('*')
+      .eq('workspace_id', workspace_id)
+      .order('created_at', { ascending: false })
+      .limit(50)
+
+    if (error) throw error
+    res.json({ success: true, data })
+  } catch (err) {
+    console.error('[GET /api/notifications]', err)
+    res.status(500).json({ success: false, error: 'Failed to fetch notifications' })
+  }
+})
+
+// Mark single notification as read
+app.put('/api/notifications/:id/read', requireAuth, async (req, res) => {
+  const { id } = req.params
+  try {
+    const { data, error } = await req.supabase
+      .from('notifications')
+      .update({ read_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) throw error
+    res.json({ success: true, data })
+  } catch (err) {
+    console.error('[PUT /api/notifications/:id/read]', err)
+    res.status(500).json({ success: false, error: 'Failed to mark notification as read' })
+  }
+})
+
+// Mark all notifications as read for user in workspace
+app.post('/api/notifications/read-all', requireAuth, async (req, res) => {
+  const { workspace_id } = req.body
+  if (!workspace_id) {
+    return res.status(400).json({ success: false, error: 'workspace_id is required' })
+  }
+
+  try {
+    const { data, error } = await req.supabase
+      .from('notifications')
+      .update({ read_at: new Date().toISOString() })
+      .eq('workspace_id', workspace_id)
+      .is('read_at', null)
+      .select()
+
+    if (error) throw error
+    res.json({ success: true, count: data?.length || 0 })
+  } catch (err) {
+    console.error('[POST /api/notifications/read-all]', err)
+    res.status(500).json({ success: false, error: 'Failed to mark all notifications as read' })
+  }
+})
+
+// ── Helper: Detect Recurring Candidate Expenses ─────────────────────
+function detectRecurringCandidates(expenses) {
+  const groups = {}
+  expenses.forEach(e => {
+    if (!e.title) return
+    const vendor = e.title.trim().toLowerCase()
+    if (!groups[vendor]) groups[vendor] = []
+    groups[vendor].push(e)
+  })
+
+  const candidates = []
+
+  Object.keys(groups).forEach(vendor => {
+    const list = groups[vendor]
+    if (list.length < 3) return
+
+    list.sort((a, b) => new Date(a.date) - new Date(b.date))
+
+    const entries = list.map(e => ({
+      month: e.date.slice(0, 7),
+      year: parseInt(e.date.slice(0, 4)),
+      monthVal: parseInt(e.date.slice(5, 7)),
+      amount: Number(e.amount),
+      raw: e,
+    }))
+
+    // Find sets of 3 consecutive months
+    for (let i = 0; i < entries.length; i++) {
+      for (let j = i + 1; j < entries.length; j++) {
+        for (let k = j + 1; k < entries.length; k++) {
+          const e1 = entries[i]
+          const e2 = entries[j]
+          const e3 = entries[k]
+
+          const diff12 = (e2.year - e1.year) * 12 + (e2.monthVal - e1.monthVal)
+          const diff23 = (e3.year - e2.year) * 12 + (e3.monthVal - e2.monthVal)
+
+          if (diff12 === 1 && diff23 === 1) {
+            const minAmt = Math.min(e1.amount, e2.amount, e3.amount)
+            const maxAmt = Math.max(e1.amount, e2.amount, e3.amount)
+            
+            if (maxAmt > 0 && (maxAmt - minAmt) / maxAmt <= 0.10) {
+              const avgAmount = Math.round((e1.amount + e2.amount + e3.amount) / 3)
+              
+              if (!candidates.some(c => c.vendor.toLowerCase() === vendor)) {
+                candidates.push({
+                  vendor: e3.raw.title,
+                  amount: avgAmount,
+                  category_id: e3.raw.category_id,
+                  next_expected_date: calculateNextExpectedDate(e3.raw.date),
+                })
+              }
+            }
+          }
+        }
+      }
+    }
+  })
+
+  return candidates
+}
+
+function calculateNextExpectedDate(lastDateStr) {
+  try {
+    const lastDate = new Date(lastDateStr)
+    lastDate.setMonth(lastDate.getMonth() + 1)
+    return lastDate.toISOString().split('T')[0]
+  } catch (err) {
+    return new Date().toISOString().split('T')[0]
+  }
+}
+
+// ── Recurring Expenses Endpoints ─────────────────────────────────────
+// Fetch recurring candidates and active configurations
+app.get('/api/recurring', requireAuth, async (req, res) => {
+  const { workspace_id } = req.query
+  if (!workspace_id) {
+    return res.status(400).json({ success: false, error: 'workspace_id is required' })
+  }
+
+  try {
+    const { data: dbItems, error: dbError } = await req.supabase
+      .from('recurring_expenses')
+      .select('*')
+      .eq('workspace_id', workspace_id)
+
+    if (dbError) throw dbError
+
+    const { data: expenses, error: expError } = await req.supabase
+      .from('expenses')
+      .select('*')
+      .eq('workspace_id', workspace_id)
+      .is('deleted_at', null)
+
+    if (expError) throw expError
+
+    const detected = detectRecurringCandidates(expenses)
+
+    const existingMap = new Map(dbItems.map(item => [item.vendor.trim().toLowerCase(), item]))
+    const candidates = detected.filter(c => {
+      const key = c.vendor.trim().toLowerCase()
+      return !existingMap.has(key)
+    })
+
+    const confirmed = dbItems.filter(item => item.status === 'confirmed')
+    const dismissed = dbItems.filter(item => item.status === 'dismissed')
+
+    res.json({
+      success: true,
+      candidates,
+      confirmed,
+      dismissed,
+    })
+  } catch (err) {
+    console.error('[GET /api/recurring]', err)
+    res.status(500).json({ success: false, error: 'Failed to fetch recurring expenses' })
+  }
+})
+
+// Create / Confirm recurring configuration
+app.post('/api/recurring', requireAuth, async (req, res) => {
+  const { workspace_id, vendor, amount, category_id, status, next_expected_date } = req.body
+  if (!workspace_id || !vendor || !amount || !status || !next_expected_date) {
+    return res.status(400).json({ success: false, error: 'Missing required fields' })
+  }
+
+  try {
+    const { data, error } = await req.supabase
+      .from('recurring_expenses')
+      .insert({
+        workspace_id,
+        vendor,
+        amount: Number(amount),
+        category_id: category_id || null,
+        status,
+        next_expected_date,
+      })
+      .select()
+      .single()
+
+    if (error) throw error
+    res.json({ success: true, data })
+  } catch (err) {
+    console.error('[POST /api/recurring]', err)
+    res.status(500).json({ success: false, error: 'Failed to save recurring expense' })
+  }
+})
+
+// Update recurring configuration
+app.put('/api/recurring/:id', requireAuth, async (req, res) => {
+  const { id } = req.params
+  const { status, next_expected_date, amount, category_id } = req.body
+
+  try {
+    const updates = {}
+    if (status) updates.status = status
+    if (next_expected_date) updates.next_expected_date = next_expected_date
+    if (amount !== undefined) updates.amount = Number(amount)
+    if (category_id !== undefined) updates.category_id = category_id || null
+
+    const { data, error } = await req.supabase
+      .from('recurring_expenses')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) throw error
+    res.json({ success: true, data })
+  } catch (err) {
+    console.error('[PUT /api/recurring/:id]', err)
+    res.status(500).json({ success: false, error: 'Failed to update recurring expense' })
+  }
+})
+
+// Fetch draft / pending recurring expenses (due within 3 days)
+app.get('/api/recurring/drafts', requireAuth, async (req, res) => {
+  const { workspace_id } = req.query
+  if (!workspace_id) {
+    return res.status(400).json({ success: false, error: 'workspace_id is required' })
+  }
+
+  try {
+    const today = new Date()
+    const thresholdDate = new Date()
+    thresholdDate.setDate(today.getDate() + 3)
+    const thresholdStr = thresholdDate.toISOString().split('T')[0]
+
+    const { data, error } = await req.supabase
+      .from('recurring_expenses')
+      .select('*')
+      .eq('workspace_id', workspace_id)
+      .eq('status', 'confirmed')
+      .lte('next_expected_date', thresholdStr)
+
+    if (error) throw error
+    res.json({ success: true, data })
+  } catch (err) {
+    console.error('[GET /api/recurring/drafts]', err)
+    res.status(500).json({ success: false, error: 'Failed to fetch recurring drafts' })
   }
 })
 

@@ -341,6 +341,7 @@ export default function ExpensesPage({
               loading={isAdding}
               prefill={prefill}
               onClearPrefill={() => setPrefill(null)}
+              workspaceId={activeWorkspace?.id}
             />
             {addError && (
               <p className="text-xs mt-2" style={{ color: '#E85D2F' }}>

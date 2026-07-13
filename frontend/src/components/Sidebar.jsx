@@ -8,7 +8,7 @@ import { useState } from 'react'
 import {
   LayoutDashboard, Receipt, PiggyBank, Users, Sparkles,
   BarChart3, Download, Settings, LogOut, Menu, X,
-  Bell, BookOpen,
+  Bell, BookOpen, RefreshCw, Image as ImageIcon,
 } from 'lucide-react'
 import KharchaLogo from './KharchaLogo'
 
@@ -16,6 +16,8 @@ const NAV_ITEMS = [
   { id: 'dashboard',  label: 'Dashboard',      icon: LayoutDashboard },
   { id: 'expenses',   label: 'Expenses',        icon: Receipt         },
   { id: 'budgets',    label: 'Budgets',         icon: PiggyBank       },
+  { id: 'recurring',  label: 'Recurring',       icon: RefreshCw       },
+  { id: 'vault',      label: 'Receipt Vault',   icon: ImageIcon       },
   { id: 'insights',   label: 'Smart Insights',  icon: Sparkles        },
   { id: 'analytics',  label: 'Analytics',       icon: BarChart3       },
   { id: 'split',      label: 'Split & Group',   icon: Users           },
@@ -24,8 +26,16 @@ const NAV_ITEMS = [
   { id: 'guide',      label: 'Guide',           icon: BookOpen        },
 ]
 
-export default function Sidebar({ activeModule, onNavigate, workspaceName, onSignOut }) {
-  const [collapsed, setCollapsed] = useState(false)
+export default function Sidebar({
+  activeModule,
+  onNavigate,
+  workspaceName,
+  onSignOut,
+  collapsed,
+  setCollapsed,
+  unreadNotifCount,
+  onToggleNotif,
+}) {
   const [mobileOpen, setMobileOpen] = useState(false)
 
   const NavItem = ({ item }) => {
@@ -112,6 +122,32 @@ export default function Sidebar({ activeModule, onNavigate, workspaceName, onSig
       {/* Bottom: settings + sign out */}
       <div className="px-2 pb-4 pt-2 border-t" style={{ borderColor: '#F3F4F6' }}>
         <button
+          onClick={onToggleNotif}
+          className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm
+                     font-medium transition relative"
+          style={{ color: '#6B7280' }}
+          onMouseEnter={e => (e.currentTarget.style.background = '#F9FAFB')}
+          onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+        >
+          <Bell size={17} strokeWidth={2} style={{ flexShrink: 0, color: '#9CA3AF' }} />
+          {unreadNotifCount > 0 && (
+            <span 
+              className="absolute rounded-full bg-red-500 text-[8px] font-bold text-white flex items-center justify-center"
+              style={{
+                top: collapsed ? '4px' : '8px',
+                left: collapsed ? '24px' : '20px',
+                minWidth: '12px',
+                height: '12px',
+                padding: '0 2px',
+              }}
+            >
+              {unreadNotifCount}
+            </span>
+          )}
+          {!collapsed && <span>Notifications</span>}
+        </button>
+
+        <button
           onClick={() => { onNavigate('settings'); setMobileOpen(false) }}
           className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm
                      font-medium transition"
@@ -148,6 +184,30 @@ export default function Sidebar({ activeModule, onNavigate, workspaceName, onSig
         onClick={() => setMobileOpen(v => !v)}
       >
         {mobileOpen ? <X size={16} /> : <Menu size={16} />}
+      </button>
+
+      {/* Mobile bell button */}
+      <button
+        className="fixed top-4 right-4 z-50 md:hidden w-9 h-9 rounded-xl
+                   flex items-center justify-center shadow-card relative"
+        style={{ background: '#fff', border: '1px solid #E5E7EB', color: '#374151' }}
+        onClick={onToggleNotif}
+      >
+        <Bell size={16} />
+        {unreadNotifCount > 0 && (
+          <span 
+            className="absolute rounded-full bg-red-500 text-[8px] font-bold text-white flex items-center justify-center"
+            style={{
+              top: '-2px',
+              right: '-2px',
+              minWidth: '14px',
+              height: '14px',
+              padding: '0 2.5px',
+            }}
+          >
+            {unreadNotifCount}
+          </span>
+        )}
       </button>
 
       {/* Mobile overlay */}

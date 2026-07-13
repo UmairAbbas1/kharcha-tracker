@@ -127,6 +127,7 @@ export default function DashboardPage({
     loading:        isAdding,
     prefill,
     onClearPrefill: () => setPrefill(null),
+    workspaceId:    activeWorkspace?.id,
   }
 
   return (

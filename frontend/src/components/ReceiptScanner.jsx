@@ -7,11 +7,12 @@
 import { useRef, useState } from 'react'
 import { Camera, Loader2 } from 'lucide-react'
 import { scanReceipt } from '../api'
+import { supabase } from '../lib/supabase'
 
 /**
- * @param {{ categories: string[], onScan: (data) => void, onError: (msg) => void }} props
+ * @param {{ workspaceId: string, categories: string[], onScan: (data) => void, onError: (msg) => void }} props
  */
-export default function ReceiptScanner({ categories = [], onScan, onError }) {
+export default function ReceiptScanner({ workspaceId, categories = [], onScan, onError }) {
   const inputRef         = useRef()
   const [scanning, setScanning] = useState(false)
 
@@ -24,9 +25,25 @@ export default function ReceiptScanner({ categories = [], onScan, onError }) {
 
     setScanning(true)
     try {
+      let receiptUrl = null
+      const shouldSave = localStorage.getItem('kharcha_save_receipts') === 'true'
+
+      if (shouldSave && workspaceId) {
+        const fileExt = file.name.split('.').pop()
+        const fileName = `${workspaceId}/${Date.now()}.${fileExt}`
+        const { data, error } = await supabase.storage.from('receipts').upload(fileName, file)
+        
+        if (error) {
+          console.warn('[ReceiptScanner] Storage upload failed:', error.message)
+        } else {
+          const { data: { publicUrl } } = supabase.storage.from('receipts').getPublicUrl(fileName)
+          receiptUrl = publicUrl
+        }
+      }
+
       const dataUri = await fileToDataUri(file)
       const result  = await scanReceipt(dataUri, categories)
-      onScan(result)
+      onScan({ ...result, receipt_url: receiptUrl })
     } catch (err) {
       onError(err.message || 'Scan failed. Please fill in manually.')
     } finally {

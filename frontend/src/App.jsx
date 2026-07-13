@@ -12,6 +12,14 @@ import AlertHistoryPage   from './pages/AlertHistoryPage'
 import GuidePage          from './pages/GuidePage'
 import Sidebar            from './components/Sidebar'
 import CommandPalette     from './components/CommandPalette'
+import NotificationsPanel from './components/NotificationsPanel'
+import RecurringBanner    from './components/RecurringBanner'
+import {
+  getNotifications, markNotificationRead, markAllNotificationsRead,
+  getRecurringDrafts, updateRecurringExpense, createExpense
+} from './api'
+import { supabase } from './lib/supabase'
+import RecurringPage from './pages/RecurringPage'
 
 // ── Module placeholder component ─────────────────────────────────────
 function ComingSoon({ label }) {
@@ -34,11 +42,124 @@ function AppInner() {
   const { activeWorkspace, loading: wsLoading } = useWorkspace()
   const [activeModule, setActiveModule] = useState('dashboard')
 
+  // Sidebar collapse state (shared)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+
   // Command palette related states
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false)
   const [expenseSearchQuery, setExpenseSearchQuery] = useState('')
   const [autoOpenAddExpense, setAutoOpenAddExpense] = useState(false) // can be true or prefill object
   const [autoFocusAiAssistant, setAutoFocusAiAssistant] = useState(false)
+
+  // Notifications states
+  const [notifications, setNotifications] = useState([])
+  const [isNotifOpen, setIsNotifOpen] = useState(false)
+  const [notifLoading, setNotifLoading] = useState(false)
+
+  // Recurring Expenses Draft states
+  const [recurringDrafts, setRecurringDrafts] = useState([])
+
+  // Fetch recurring drafts
+  const fetchDrafts = async () => {
+    if (!activeWorkspace?.id) return
+    try {
+      const res = await getRecurringDrafts(activeWorkspace.id)
+      setRecurringDrafts(res.data || [])
+    } catch (err) {
+      console.error('[AppInner] fetchDrafts failed:', err)
+    }
+  }
+
+  const handleConfirmDraft = async (draft) => {
+    await createExpense(activeWorkspace.id, {
+      title: draft.vendor,
+      amount: Number(draft.amount),
+      category_id: draft.category_id,
+      date: draft.next_expected_date,
+    })
+
+    const nextDate = new Date(draft.next_expected_date)
+    nextDate.setMonth(nextDate.getMonth() + 1)
+    const nextExpectedStr = nextDate.toISOString().split('T')[0]
+
+    await updateRecurringExpense(draft.id, {
+      next_expected_date: nextExpectedStr
+    })
+
+    fetchDrafts()
+    fetchNotifications()
+  }
+
+  const handleDismissDraft = async (id) => {
+    const draft = recurringDrafts.find(d => d.id === id)
+    if (!draft) return
+
+    const nextDate = new Date(draft.next_expected_date)
+    nextDate.setMonth(nextDate.getMonth() + 1)
+    const nextExpectedStr = nextDate.toISOString().split('T')[0]
+
+    await updateRecurringExpense(id, {
+      next_expected_date: nextExpectedStr
+    })
+    fetchDrafts()
+  }
+
+  // Real-time subscribe and fetch notifications
+  useEffect(() => {
+    if (!activeWorkspace?.id || !user?.id) return
+
+    fetchNotifications()
+    fetchDrafts()
+
+    // Subscribe to INSERT events in public.notifications
+    const channel = supabase
+      .channel(`notifications-user-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          setNotifications(prev => [payload.new, ...prev].slice(0, 50))
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [activeWorkspace?.id, user?.id])
+
+  const handleMarkRead = async (id) => {
+    // Optimistic update
+    setNotifications(prev =>
+      prev.map(n => (n.id === id ? { ...n, read_at: new Date().toISOString() } : n))
+    )
+    try {
+      await markNotificationRead(id)
+    } catch (err) {
+      console.error('[AppInner] handleMarkRead failed:', err)
+      fetchNotifications()
+    }
+  }
+
+  const handleMarkAllRead = async () => {
+    // Optimistic update
+    setNotifications(prev =>
+      prev.map(n => ({ ...n, read_at: n.read_at || new Date().toISOString() }))
+    )
+    try {
+      await markAllNotificationsRead(activeWorkspace.id)
+    } catch (err) {
+      console.error('[AppInner] handleMarkAllRead failed:', err)
+      fetchNotifications()
+    }
+  }
+
+  const unreadCount = notifications.filter(n => !n.read_at).length
 
   // Listen for global shortcut Cmd+K / Ctrl+K
   useEffect(() => {
@@ -112,6 +233,7 @@ function AppInner() {
         />
       )
       case 'budgets':   return <BudgetsPage />
+      case 'recurring': return <RecurringPage />
       case 'insights':  return <ComingSoon label="Smart Insights" />
       case 'analytics': return <AnalyticsPage />
       case 'split':     return <SplitPage />
@@ -130,10 +252,34 @@ function AppInner() {
         onNavigate={setActiveModule}
         workspaceName={activeWorkspace.name}
         onSignOut={signOut}
+        collapsed={sidebarCollapsed}
+        setCollapsed={setSidebarCollapsed}
+        unreadNotifCount={unreadCount}
+        onToggleNotif={() => setIsNotifOpen(o => !o)}
       />
       <main className="flex-1 min-w-0 overflow-y-auto">
+        {recurringDrafts.length > 0 && (
+          <div className="max-w-5xl mx-auto px-4 pt-6 -mb-2">
+            <RecurringBanner
+              drafts={recurringDrafts}
+              onConfirm={handleConfirmDraft}
+              onDismiss={handleDismissDraft}
+            />
+          </div>
+        )}
         {renderModule()}
       </main>
+
+      {isNotifOpen && (
+        <NotificationsPanel
+          notifications={notifications}
+          onClose={() => setIsNotifOpen(false)}
+          onMarkRead={handleMarkRead}
+          onMarkAllRead={handleMarkAllRead}
+          isLoading={notifLoading}
+          positionLeft={sidebarCollapsed ? '74px' : '230px'}
+        />
+      )}
 
       <CommandPalette
         isOpen={isCommandPaletteOpen}

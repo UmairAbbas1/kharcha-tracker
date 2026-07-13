@@ -18,11 +18,12 @@ const TRANSCRIPT_MAX = 80
 const SMS_PLACEHOLDER = `Paste your bank SMS here.
 e.g. MCB: Rs.2,500 debited from A/C **1234 at KFC DHA on 07-Jul-26. Avl Bal: Rs.18,750`
 
-export default function AddForm({ categories = [], onAdd, loading, prefill, onClearPrefill }) {
+export default function AddForm({ categories = [], onAdd, loading, prefill, onClearPrefill, workspaceId }) {
   const [title,         setTitle]         = useState('')
   const [amount,        setAmount]        = useState('')
   const [catId,         setCatId]         = useState('')
   const [date,          setDate]          = useState(new Date().toISOString().split('T')[0])
+  const [receiptUrl,    setReceiptUrl]    = useState(null)
   const [error,         setError]         = useState('')
   const [scanned,       setScanned]       = useState(false)
   const [transcript,    setTranscript]    = useState(null)
@@ -45,6 +46,7 @@ export default function AddForm({ categories = [], onAdd, loading, prefill, onCl
     if (prefill.vendor)   setTitle(prefill.vendor)
     if (prefill.amount)   setAmount(String(prefill.amount))
     if (prefill.date)     setDate(prefill.date)
+    if (prefill.receipt_url) setReceiptUrl(prefill.receipt_url)
     if (prefill.category) {
       const match = categories.find(
         c => c.name.toLowerCase() === prefill.category.toLowerCase()
@@ -63,6 +65,7 @@ export default function AddForm({ categories = [], onAdd, loading, prefill, onCl
     if (data.vendor)   setTitle(data.vendor)
     if (data.amount)   setAmount(String(data.amount))
     if (data.date)     setDate(data.date)
+    if (data.receipt_url) setReceiptUrl(data.receipt_url)
     if (data.category) {
       const match = categories.find(
         c => c.name.toLowerCase() === data.category.toLowerCase()
@@ -125,9 +128,11 @@ export default function AddForm({ categories = [], onAdd, loading, prefill, onCl
         amount:      Number(amount),
         category_id: activeCatId,
         date,
+        receipt_url: receiptUrl,
       })
       setTitle('')
       setAmount('')
+      setReceiptUrl(null)
       setScanned(false)
       setTranscript(null)
       setExtractMethod(null)
@@ -159,6 +164,7 @@ export default function AddForm({ categories = [], onAdd, loading, prefill, onCl
 
         <div className="flex flex-wrap justify-end gap-2">
           <ReceiptScanner
+            workspaceId={workspaceId}
             categories={categoryNames}
             onScan={handleReceiptScan}
             onError={(msg) => setError(msg)}

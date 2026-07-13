@@ -415,3 +415,91 @@ export async function transcribeOnly(audioBlob) {
   if (!res.ok) throw new Error(json.error || 'Transcription failed')
   return { transcript: json.transcript }
 }
+
+// ── Notifications ─────────────────────────────────────────────────────
+export async function getNotifications(workspaceId) {
+  const token = await getToken()
+  const res = await fetch(`${BACKEND}/api/notifications?workspace_id=${workspaceId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.error || 'Failed to fetch notifications')
+  return json
+}
+
+export async function markNotificationRead(id) {
+  const token = await getToken()
+  const res = await fetch(`${BACKEND}/api/notifications/${id}/read`, {
+    method:  'PUT',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.error || 'Failed to mark notification as read')
+  return json
+}
+
+export async function markAllNotificationsRead(workspaceId) {
+  const token = await getToken()
+  const res = await fetch(`${BACKEND}/api/notifications/read-all`, {
+    method:  'POST',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({ workspace_id: workspaceId }),
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.error || 'Failed to mark all notifications as read')
+  return json
+}
+
+// ── Recurring Expenses ────────────────────────────────────────────────
+export async function getRecurringExpenses(workspaceId) {
+  const token = await getToken()
+  const res = await fetch(`${BACKEND}/api/recurring?workspace_id=${workspaceId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.error || 'Failed to fetch recurring expenses')
+  return json
+}
+
+export async function saveRecurringExpense(config) {
+  const token = await getToken()
+  const res = await fetch(`${BACKEND}/api/recurring`, {
+    method:  'POST',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify(config),
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.error || 'Failed to save recurring expense')
+  return json
+}
+
+export async function updateRecurringExpense(id, updates) {
+  const token = await getToken()
+  const res = await fetch(`${BACKEND}/api/recurring/${id}`, {
+    method:  'PUT',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify(updates),
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.error || 'Failed to update recurring expense')
+  return json
+}
+
+export async function getRecurringDrafts(workspaceId) {
+  const token = await getToken()
+  const res = await fetch(`${BACKEND}/api/recurring/drafts?workspace_id=${workspaceId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.error || 'Failed to fetch recurring drafts')
+  return json
+}
