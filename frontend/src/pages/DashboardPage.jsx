@@ -23,13 +23,12 @@ import BudgetBanner       from '../components/BudgetBanner'
 import BudgetModal        from '../components/BudgetModal'
 import BudgetRings        from '../components/BudgetRings'
 import BottomSheet        from '../components/BottomSheet'
-import KharchaLogo        from '../components/KharchaLogo'
 import MonthlySummaryCard from '../components/MonthlySummaryCard'
 import InsightsCard       from '../components/InsightsCard'
-import { LogOut, Settings, Plus } from 'lucide-react'
+import { Settings, Plus } from 'lucide-react'
 
 export default function DashboardPage() {
-  const { signOut, user }                                = useAuth()
+  const { user }                                         = useAuth()
   const { activeWorkspace, workspaces, switchWorkspace } = useWorkspace()
 
   const [categories,     setCategories]     = useState([])
@@ -114,19 +113,16 @@ export default function DashboardPage() {
       <div className="max-w-5xl mx-auto px-4 py-8 md:py-10">
 
         {/* ── Header ── */}
-        <header className="flex items-center justify-between mb-8 animate-entry">
-          <div className="flex items-center gap-3">
-            <KharchaLogo size={32} color="#2563EB" />
-            <div>
-              <h1 className="text-lg font-bold leading-tight" style={{ color: '#0F1117' }}>
-                Kharcha Tracker
-              </h1>
-              {activeWorkspace && (
-                <p className="text-xs" style={{ color: '#6B7280' }}>
-                  {activeWorkspace.name}
-                </p>
-              )}
-            </div>
+        <header className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-lg font-bold leading-tight" style={{ color: '#0F1117' }}>
+              Dashboard
+            </h1>
+            {activeWorkspace && (
+              <p className="text-xs" style={{ color: '#6B7280' }}>
+                {activeWorkspace.name}
+              </p>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
