@@ -1,10 +1,16 @@
 import { useState } from 'react'
 import { AuthProvider, useAuth }           from './context/AuthContext'
 import { WorkspaceProvider, useWorkspace } from './context/WorkspaceContext'
-import AuthPage      from './pages/AuthPage'
-import DashboardPage from './pages/DashboardPage'
-import ExpensesPage  from './pages/ExpensesPage'
-import Sidebar       from './components/Sidebar'
+import AuthPage           from './pages/AuthPage'
+import DashboardPage      from './pages/DashboardPage'
+import ExpensesPage       from './pages/ExpensesPage'
+import BudgetsPage        from './pages/BudgetsPage'
+import AnalyticsPage      from './pages/AnalyticsPage'
+import SplitPage          from './pages/SplitPage'
+import ExportPage         from './pages/ExportPage'
+import AlertHistoryPage   from './pages/AlertHistoryPage'
+import GuidePage          from './pages/GuidePage'
+import Sidebar            from './components/Sidebar'
 
 // ── Module placeholder component ─────────────────────────────────────
 function ComingSoon({ label }) {
@@ -52,13 +58,13 @@ function AppInner() {
     switch (activeModule) {
       case 'dashboard': return <DashboardPage />
       case 'expenses':  return <ExpensesPage />
-      case 'budgets':   return <ComingSoon label="Budgets" />
+      case 'budgets':   return <BudgetsPage />
       case 'insights':  return <ComingSoon label="Smart Insights" />
-      case 'analytics': return <ComingSoon label="Analytics" />
-      case 'split':     return <ComingSoon label="Split & Group" />
-      case 'export':    return <ComingSoon label="Export" />
-      case 'alerts':    return <ComingSoon label="Alert History" />
-      case 'guide':     return <ComingSoon label="Guide" />
+      case 'analytics': return <AnalyticsPage />
+      case 'split':     return <SplitPage />
+      case 'export':    return <ExportPage />
+      case 'alerts':    return <AlertHistoryPage />
+      case 'guide':     return <GuidePage />
       case 'settings':  return <ComingSoon label="Settings" />
       default:          return <DashboardPage />
     }
