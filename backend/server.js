@@ -541,6 +541,30 @@ app.get('/api/expenses', requireAuth, async (req, res) => {
     const { data: expenses, count, error } = await dbQuery
     if (error) throw error
 
+    // Compute total sum of matching expenses for filters
+    let totalSumQuery = req.supabase
+      .from('expenses')
+      .select('amount')
+      .eq('workspace_id', workspace_id)
+      .is('deleted_at', null)
+
+    if (search) {
+      totalSumQuery = totalSumQuery.ilike('title', `%${search.trim()}%`)
+    }
+    if (category_id) {
+      totalSumQuery = totalSumQuery.eq('category_id', category_id)
+    }
+    if (start_date) {
+      totalSumQuery = totalSumQuery.gte('date', start_date)
+    }
+    if (end_date) {
+      totalSumQuery = totalSumQuery.lte('date', end_date)
+    }
+
+    const { data: sumData, error: sumError } = await totalSumQuery
+    if (sumError) throw sumError
+    const totalSum = (sumData || []).reduce((acc, curr) => acc + Number(curr.amount), 0)
+
     // Safe separate category lookup to satisfy implicit join drop safeguard (REQ-EXP-24)
     const { data: categories, error: catError } = await req.supabase
       .from('categories')
@@ -559,6 +583,7 @@ app.get('/api/expenses', requireAuth, async (req, res) => {
       success: true,
       data: processed,
       count: count || 0,
+      totalSum,
     })
   } catch (err) {
     console.error('[GET /api/expenses]', err)
