@@ -461,4 +461,4 @@ The UI uses a deliberate, restrained design language — not AI-template default
 
 **GitHub:** [github.com/UmairAbbas1/kharcha-tracker](https://github.com/UmairAbbas1/kharcha-tracker)
 
-**Built with:** Kiro AI · Supabase · Groq · Resend · React · Node.js
+
