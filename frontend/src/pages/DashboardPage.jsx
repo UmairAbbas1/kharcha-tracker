@@ -30,7 +30,6 @@ import { Settings, Plus } from 'lucide-react'
 export default function DashboardPage() {
   const { user }                                         = useAuth()
   const { activeWorkspace, workspaces, switchWorkspace } = useWorkspace()
-
   const [categories,     setCategories]     = useState([])
   const [alertLogs,      setAlertLogs]      = useState([])
   const [monthlySummary, setMonthlySummary] = useState(null)
@@ -148,17 +147,6 @@ export default function DashboardPage() {
             >
               <Settings size={13} strokeWidth={2} />
               Budgets
-            </button>
-
-            <button
-              onClick={signOut}
-              className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5
-                         text-xs font-semibold transition hover:bg-red-50"
-              style={{ borderColor: '#E5E7EB', color: '#6B7280', background: '#fff' }}
-              title="Sign out"
-            >
-              <LogOut size={13} strokeWidth={2} />
-              Sign out
             </button>
           </div>
         </header>
