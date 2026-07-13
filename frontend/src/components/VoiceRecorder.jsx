@@ -10,7 +10,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { Mic, MicOff, Square, Loader2 } from 'lucide-react'
-import { scanVoice } from '../api'
+import { scanVoice, transcribeOnly } from '../api'
 
 const STATES = {
   IDLE:          'IDLE',
@@ -20,16 +20,17 @@ const STATES = {
   DENIED:        'DENIED',
 }
 
-const MAX_DURATION_MS = 60_000   // 60 s auto-stop
+const MAX_DURATION_MS = 60_000
 
 /**
  * @param {{
  *   categories: string[],
- *   onScan:    (data: {amount,category,vendor,date,transcript}) => void,
+ *   mode:       'expense'|'transcript',  — default 'expense'
+ *   onScan:    (data) => void,  — expense mode: full data; transcript mode: { transcript }
  *   onError:   (msg: string) => void,
  * }} props
  */
-export default function VoiceRecorder({ categories = [], onScan, onError }) {
+export default function VoiceRecorder({ categories = [], mode = 'expense', onScan, onError }) {
   const [state,     setState]     = useState(STATES.IDLE)
   const [seconds,   setSeconds]   = useState(0)
   const [errorMsg,  setErrorMsg]  = useState('')
@@ -115,7 +116,12 @@ export default function VoiceRecorder({ categories = [], onScan, onError }) {
 
       setState(STATES.TRANSCRIBING)
       try {
-        const result = await scanVoice(blob, categories)
+        let result
+        if (mode === 'transcript') {
+          result = await transcribeOnly(blob)
+        } else {
+          result = await scanVoice(blob, categories)
+        }
         setState(STATES.IDLE)
         setSeconds(0)
         onScan?.(result)

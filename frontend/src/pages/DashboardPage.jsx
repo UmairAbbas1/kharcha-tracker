@@ -25,6 +25,7 @@ import BudgetRings        from '../components/BudgetRings'
 import BottomSheet        from '../components/BottomSheet'
 import KharchaLogo        from '../components/KharchaLogo'
 import MonthlySummaryCard from '../components/MonthlySummaryCard'
+import InsightsCard       from '../components/InsightsCard'
 import { LogOut, Settings, Plus } from 'lucide-react'
 
 export default function DashboardPage() {
@@ -236,6 +237,16 @@ export default function DashboardPage() {
             />
           </div>
         </div>
+
+        {/* ── Smart Insights (AI assistant) — full width ── */}
+        {activeWorkspace && (
+          <div className="mb-5">
+            <InsightsCard
+              workspaceId={activeWorkspace.id}
+              categories={categories}
+            />
+          </div>
+        )}
 
         {/* ── Footer ── */}
         <footer className="text-center mt-10 text-xs" style={{ color: '#9CA3AF' }}>

@@ -101,3 +101,49 @@ export async function transcribeAndExtract(fileBuffer, mimeType, categories = []
 
   return { transcript, amount, category, vendor, date }
 }
+
+/**
+ * Transcribe audio to text only — no expense extraction.
+ * Used by the Natural Language Expense Assistant voice input.
+ *
+ * @param {Buffer} fileBuffer
+ * @param {string} mimeType
+ * @returns {Promise<{ transcript: string }>}
+ */
+export async function transcribeOnly(fileBuffer, mimeType) {
+  if (!process.env.GROQ_API_KEY) {
+    throw Object.assign(new Error('Voice transcription not configured'), { status: 503 })
+  }
+
+  const baseMime = mimeType?.split(';')[0].toLowerCase().trim()
+  const MIME_TO_EXT = {
+    'audio/webm': 'webm', 'audio/mp4': 'mp4', 'audio/mpeg': 'mp3',
+    'audio/wav': 'wav', 'audio/ogg': 'ogg',
+  }
+  const ext  = MIME_TO_EXT[baseMime] || 'webm'
+  const file = new File([fileBuffer], `audio.${ext}`, { type: baseMime })
+
+  const groq = getGroq()
+  let transcript
+  try {
+    const result = await groq.audio.transcriptions.create({
+      model:           'whisper-large-v3-turbo',
+      file,
+      language:        'en',
+      response_format: 'text',
+      prompt:          'Expense question in English or Roman Urdu. Finance vocabulary: rupees, Rs, kharch, kitna, hafte, mahine, category, transport, food.',
+    })
+    transcript = typeof result === 'string' ? result.trim() : result?.text?.trim() ?? ''
+  } catch (err) {
+    throw Object.assign(
+      new Error('Transcription failed. Please type your question instead.'),
+      { status: 422 }
+    )
+  }
+
+  if (!transcript) {
+    throw Object.assign(new Error('No speech detected. Please try again.'), { status: 422 })
+  }
+
+  return { transcript }
+}

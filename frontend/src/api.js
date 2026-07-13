@@ -366,3 +366,52 @@ export async function exportCsv(workspaceId, month, filename) {
   a.remove()
   URL.revokeObjectURL(url)
 }
+
+// ── Natural Language Expense Assistant ───────────────────────────────
+
+/**
+ * Ask a natural-language question about expenses.
+ * @param {string}   question     — e.g. "is hafte transport pe kitna hua"
+ * @param {string}   workspaceId
+ * @param {string[]} categories   — workspace category names for intent resolution
+ * @returns {Promise<{ answer: string, intent: object, result: object }>}
+ */
+export async function askAssistant(question, workspaceId, categories = []) {
+  const token = await getToken()
+
+  const res = await fetch(`${BACKEND}/api/ask`, {
+    method:  'POST',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({ question, workspaceId, categories }),
+  })
+
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.error || 'Assistant request failed')
+  return json
+}
+
+/**
+ * Transcribe audio to text only — no expense extraction.
+ * Used by InsightsCard voice input in 'transcript' mode.
+ * @param {Blob} audioBlob
+ * @returns {Promise<{ transcript: string }>}
+ */
+export async function transcribeOnly(audioBlob) {
+  const token = await getToken()
+
+  const form = new FormData()
+  form.append('audio', audioBlob, 'question.webm')
+
+  const res = await fetch(`${BACKEND}/api/transcribe`, {
+    method:  'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body:    form,
+  })
+
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.error || 'Transcription failed')
+  return { transcript: json.transcript }
+}

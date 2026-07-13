@@ -6,10 +6,13 @@ import { fileURLToPath } from 'url'
 import { createClient } from '@supabase/supabase-js'
 import { evaluate }             from './alerts/alertEngine.js'
 import { scanReceipt }          from './ocr/receiptScanner.js'
-import { transcribeAndExtract } from './ocr/voiceScanner.js'
+import { transcribeAndExtract, transcribeOnly } from './ocr/voiceScanner.js'
 import { parseAndExtract }      from './ocr/smsParser.js'
 import { run as runSummaries, previousMonth } from './summaries/summaryEngine.js'
 import { getActiveProvider }    from './ocr/providerFactory.js'
+import { extractIntent }        from './insights/intentExtractor.js'
+import { runQuery }             from './insights/queryRunner.js'
+import { generateAnswer }       from './insights/answerGenerator.js'
 import ExcelJS                  from 'exceljs'
 import multer from 'multer'
 
@@ -817,6 +820,83 @@ app.get('/api/export', requireAuth, async (req, res) => {
     if (!res.headersSent) {
       res.status(500).json({ success: false, error: err.message })
     }
+  }
+})
+
+// ── POST /api/transcribe — Whisper transcript only (no expense extraction) ─
+// Used by InsightsCard voice input — returns plain transcript, no LLM extraction
+app.post('/api/transcribe', requireAuth, upload.single('audio'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ success: false, error: 'No audio file received' })
+  }
+  try {
+    const result = await transcribeOnly(req.file.buffer, req.file.mimetype)
+    res.json({ success: true, transcript: result.transcript })
+  } catch (err) {
+    const status = err.status || 500
+    console.error('[POST /api/transcribe]', err.message)
+    res.status(status).json({ success: false, error: err.message })
+  }
+})
+
+// ── POST /api/ask — Natural Language Expense Assistant ────────────────
+app.post('/api/ask', requireAuth, async (req, res) => {
+  const { question, workspaceId, categories } = req.body
+
+  if (!question || typeof question !== 'string' || !question.trim()) {
+    return res.status(400).json({ success: false, error: 'question is required' })
+  }
+  if (question.length > 500) {
+    return res.status(400).json({ success: false, error: 'question must be under 500 characters' })
+  }
+  if (!workspaceId) {
+    return res.status(400).json({ success: false, error: 'workspaceId is required' })
+  }
+
+  if (!process.env.GROQ_API_KEY) {
+    return res.status(503).json({ success: false, error: 'AI assistant is not configured. Contact the workspace owner.' })
+  }
+
+  try {
+    // Verify workspace membership (RLS backstop, explicit check for clarity)
+    const { data: membership } = await req.supabase
+      .from('workspace_members')
+      .select('role')
+      .eq('workspace_id', workspaceId)
+      .eq('user_id', req.user.id)
+      .maybeSingle()
+
+    if (!membership) {
+      return res.status(403).json({ success: false, error: 'Not a member of this workspace' })
+    }
+
+    const todayStr = new Date().toISOString().split('T')[0]
+
+    // Step 1 — Extract intent (Groq call 1)
+    const intent = await extractIntent(question.trim(), categories || [], todayStr)
+
+    // Step 2a — Execute safe read-only query (req.supabase = user-scoped, RLS active)
+    const result = await runQuery(req.supabase, workspaceId, intent, todayStr)
+
+    // Step 2b — Generate conversational answer (Groq call 2)
+    const answer = await generateAnswer(question.trim(), intent, result)
+
+    console.log('[/api/ask] answered:', { aggregation: intent.aggregation, count: result.count })
+
+    res.json({
+      success: true,
+      answer,
+      intent,
+      result: {
+        value: result.value,
+        count: result.count,
+        ...(result.rows ? { rows: result.rows } : {}),
+      },
+    })
+  } catch (err) {
+    const status = err.status || 500
+    console.error('[POST /api/ask]', err.message)
+    res.status(status).json({ success: false, error: err.message })
   }
 })
 
