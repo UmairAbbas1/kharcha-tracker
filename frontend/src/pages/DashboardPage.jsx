@@ -113,7 +113,7 @@ export default function DashboardPage({
   const handleAdd = (data) =>
     new Promise((resolve, reject) => {
       addExpense(data, {
-        onSuccess: () => { setSheetOpen(false); setPrefill(null); refreshAlertLogs(); resolve() },
+        onSuccess: (res) => { setSheetOpen(false); setPrefill(null); refreshAlertLogs(); resolve(res) },
         onError:   (err) => reject(err),
       })
     })

@@ -1,22 +1,19 @@
 /**
  * AddForm.jsx
- * Add-expense form with three scan modes:
- *  - ReceiptScanner — photo OCR
- *  - VoiceRecorder  — voice-to-expense
- *  - SMS panel      — inline paste-and-extract (Option A: replaces form fields)
- *
- * All three use the same handleScanResult() pre-fill path.
+ * Add-expense form with photo OCR, voice scanner, and SMS parsing.
+ * Supports splitting expenses among workspace members.
  */
 
 import { useState, useEffect, useRef } from 'react'
-import { PlusCircle, MessageSquare, X, Loader2 } from 'lucide-react'
+import { PlusCircle, MessageSquare, X, Loader2, Users } from 'lucide-react'
 import ReceiptScanner from './ReceiptScanner'
 import VoiceRecorder  from './VoiceRecorder'
-import { scanSms }    from '../api'
+import { scanSms, getWorkspaceMembers, splitExpense } from '../api'
 
 const TRANSCRIPT_MAX = 80
 const SMS_PLACEHOLDER = `Paste your bank SMS here.
 e.g. MCB: Rs.2,500 debited from A/C **1234 at KFC DHA on 07-Jul-26. Avl Bal: Rs.18,750`
+const pkr = (n) => `Rs ${Number(n).toLocaleString('en-PK')}`
 
 export default function AddForm({ categories = [], onAdd, loading, prefill, onClearPrefill, workspaceId }) {
   const [title,         setTitle]         = useState('')
@@ -34,6 +31,22 @@ export default function AddForm({ categories = [], onAdd, loading, prefill, onCl
   const [smsText,    setSmsText]    = useState('')
   const [smsLoading, setSmsLoading] = useState(false)
   const smsRef = useRef()
+
+  // ── Split Expense State ───────────────────────────────────
+  const [members, setMembers] = useState([])
+  const [splitEnabled, setSplitEnabled] = useState(false)
+  const [checkedMembers, setCheckedMembers] = useState([])
+
+  // Load workspace members for splits
+  useEffect(() => {
+    if (!workspaceId) return
+    getWorkspaceMembers(workspaceId)
+      .then(res => {
+        setMembers(res.data || [])
+        setCheckedMembers((res.data || []).map(m => m.user_id))
+      })
+      .catch(err => console.warn('[AddForm] failed to load workspace members:', err))
+  }, [workspaceId])
 
   // Focus textarea when SMS panel opens
   useEffect(() => {
@@ -121,21 +134,37 @@ export default function AddForm({ categories = [], onAdd, loading, prefill, onCl
       return setError('Enter a valid amount.')
     if (!activeCatId)
       return setError('No category available.')
+    if (splitEnabled && checkedMembers.length === 0)
+      return setError('Please select at least one member to split with.')
 
     try {
-      await onAdd({
+      const res = await onAdd({
         title:       title.trim(),
         amount:      Number(amount),
         category_id: activeCatId,
         date,
         receipt_url: receiptUrl,
       })
+
+      if (splitEnabled && res?.data?.id) {
+        const share = Number(amount) / checkedMembers.length
+        const splits = checkedMembers.map(mid => ({
+          member_id: mid,
+          share_amount: Number(share.toFixed(2))
+        }))
+        await splitExpense(res.data.id, splits)
+      }
+
       setTitle('')
       setAmount('')
       setReceiptUrl(null)
       setScanned(false)
       setTranscript(null)
       setExtractMethod(null)
+      setSplitEnabled(false)
+      if (members.length > 0) {
+        setCheckedMembers(members.map(m => m.user_id))
+      }
       onClearPrefill?.()
     } catch (err) {
       setError(err.message || 'Failed to add expense.')
@@ -156,7 +185,7 @@ export default function AddForm({ categories = [], onAdd, loading, prefill, onCl
 
       {/* ── Header row ── */}
       <div className="flex items-start justify-between mb-4 gap-2">
-        <h2 className="text-sm font-bold text-gray-600 flex items-center gap-2
+        <h2 className="text-sm font-bold text-gray-600 dark:text-gray-200 flex items-center gap-2
                        uppercase tracking-wider pt-1 flex-shrink-0">
           <PlusCircle size={15} color="#2563EB" />
           Add Expense
@@ -319,6 +348,53 @@ export default function AddForm({ categories = [], onAdd, loading, prefill, onCl
                           ${scanned ? 'border-amber-300 ring-1 ring-amber-200' : 'border-blue-100'}`}
               required
             />
+
+            {/* Split Toggle */}
+            {members.length > 1 && (
+              <div className="mt-2 border-t pt-3 border-blue-50">
+                <label className="flex items-center gap-2 cursor-pointer mb-2 select-none">
+                  <input
+                    type="checkbox"
+                    checked={splitEnabled}
+                    onChange={e => setSplitEnabled(e.target.checked)}
+                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 border-gray-300"
+                  />
+                  <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">
+                    Split this expense among workspace members
+                  </span>
+                </label>
+
+                {splitEnabled && (
+                  <div className="pl-6 flex flex-col gap-2 bg-blue-50/20 dark:bg-gray-800/10 p-3 rounded-xl border border-blue-100">
+                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">
+                      Select Members (Portion: {pkr((Number(amount || 0) / (checkedMembers.length || 1)).toFixed(2))} each)
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {members.map(m => {
+                        const isChecked = checkedMembers.includes(m.user_id)
+                        return (
+                          <label key={m.user_id} className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {
+                                setCheckedMembers(prev => 
+                                  isChecked 
+                                    ? prev.filter(uid => uid !== m.user_id)
+                                    : [...prev, m.user_id]
+                                )
+                              }}
+                              className="w-3.5 h-3.5 text-blue-600 rounded focus:ring-blue-500 border-gray-300"
+                            />
+                            <span className="truncate" title={m.email}>{m.email.split('@')[0]}</span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </>
         )}
 

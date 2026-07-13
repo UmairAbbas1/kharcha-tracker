@@ -282,6 +282,38 @@ app.post('/api/invite', requireAuth, async (req, res) => {
   }
 })
 
+// ── GET /api/workspace/:workspaceId/members — get workspace members with emails ──
+app.get('/api/workspace/:workspaceId/members', requireAuth, async (req, res) => {
+  const { workspaceId } = req.params
+
+  try {
+    const { data: members, error: memErr } = await req.supabase
+      .from('workspace_members')
+      .select('user_id, role, joined_at')
+      .eq('workspace_id', workspaceId)
+
+    if (memErr) throw memErr
+
+    let emailMap = new Map()
+    if (adminClient) {
+      const { data: userData } = await adminClient.auth.admin.listUsers()
+      if (userData?.users) {
+        userData.users.forEach(u => emailMap.set(u.id, u.email))
+      }
+    }
+
+    const processed = (members || []).map(m => ({
+      ...m,
+      email: emailMap.get(m.user_id) || 'Unknown User'
+    }))
+
+    res.json({ success: true, data: processed })
+  } catch (err) {
+    console.error('[GET /api/workspace/:workspaceId/members]', err)
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
 // ── Guard: prevent last owner removal ────────────────────────
 app.delete('/api/workspace/:workspaceId/members/:userId', requireAuth, async (req, res) => {
   const { workspaceId, userId } = req.params
@@ -701,6 +733,466 @@ app.delete('/api/expenses/:id', requireAuth, async (req, res) => {
     res.json({ success: true })
   } catch (err) {
     console.error('[DELETE /api/expenses/:id]', err)
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// ── POST /api/expenses/:id/split — save expense split portion records ──
+app.post('/api/expenses/:id/split', requireAuth, async (req, res) => {
+  const { id } = req.params
+  const { splits } = req.body // [{ member_id, share_amount }]
+
+  if (!splits || !Array.isArray(splits) || splits.length === 0) {
+    return res.status(400).json({ success: false, error: 'splits array is required' })
+  }
+
+  try {
+    const { data: expense, error: fetchErr } = await req.supabase
+      .from('expenses')
+      .select('id, workspace_id, amount')
+      .eq('id', id)
+      .is('deleted_at', null)
+      .maybeSingle()
+
+    if (fetchErr) throw fetchErr
+    if (!expense) return res.status(404).json({ success: false, error: 'Expense not found' })
+
+    const sum = splits.reduce((acc, curr) => acc + Number(curr.share_amount), 0)
+    if (Math.abs(sum - Number(expense.amount)) > 0.05) {
+      return res.status(400).json({
+        success: false,
+        error: `Split sum (${sum}) must equal expense amount (${expense.amount})`
+      })
+    }
+
+    const { error: deleteErr } = await req.supabase
+      .from('expense_splits')
+      .delete()
+      .eq('expense_id', id)
+
+    if (deleteErr) throw deleteErr
+
+    const records = splits.map(s => ({
+      expense_id:   id,
+      member_id:    s.member_id,
+      share_amount: Number(s.share_amount),
+      settled:      false
+    }))
+
+    const { data, error: insertErr } = await req.supabase
+      .from('expense_splits')
+      .insert(records)
+      .select()
+
+    if (insertErr) throw insertErr
+
+    res.json({ success: true, data })
+  } catch (err) {
+    console.error('[POST /api/expenses/:id/split]', err)
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// ── GET /api/splits/balances — calculate who-owes-whom unsettled debts ─
+app.get('/api/splits/balances', requireAuth, async (req, res) => {
+  const { workspace_id } = req.query
+  if (!workspace_id) {
+    return res.status(400).json({ success: false, error: 'workspace_id is required' })
+  }
+
+  try {
+    const { data: expenses, error: expErr } = await req.supabase
+      .from('expenses')
+      .select('id, created_by, title')
+      .eq('workspace_id', workspace_id)
+      .is('deleted_at', null)
+
+    if (expErr) throw expErr
+
+    if (!expenses || expenses.length === 0) {
+      return res.json({ success: true, balances: [] })
+    }
+
+    const expenseIds = expenses.map(e => e.id)
+    const expenseMap = new Map(expenses.map(e => [e.id, e]))
+
+    const { data: splits, error: splitErr } = await req.supabase
+      .from('expense_splits')
+      .select('*')
+      .in('expense_id', expenseIds)
+      .eq('settled', false)
+
+    if (splitErr) throw splitErr
+
+    const debts = {}
+
+    for (const split of splits) {
+      const exp = expenseMap.get(split.expense_id)
+      if (!exp) continue
+
+      const payerId = exp.created_by
+      const debtorId = split.member_id
+
+      if (debtorId !== payerId) {
+        if (!debts[debtorId]) debts[debtorId] = {}
+        debts[debtorId][payerId] = (debts[debtorId][payerId] || 0) + Number(split.share_amount)
+      }
+    }
+
+    const userIds = new Set()
+    for (const debtorId in debts) {
+      userIds.add(debtorId)
+      for (const creditorId in debts[debtorId]) {
+        userIds.add(creditorId)
+      }
+    }
+
+    const simplified = []
+    const usersArr = Array.from(userIds)
+    const netBalances = {}
+    usersArr.forEach(uid => { netBalances[uid] = 0 })
+
+    for (const debtorId in debts) {
+      for (const creditorId in debts[debtorId]) {
+        const amt = debts[debtorId][creditorId]
+        netBalances[debtorId] -= amt
+        netBalances[creditorId] += amt
+      }
+    }
+
+    const debtors = []
+    const creditors = []
+    for (const uid of usersArr) {
+      const bal = netBalances[uid]
+      if (bal < -0.01) {
+        debtors.push({ id: uid, amount: -bal })
+      } else if (bal > 0.01) {
+        creditors.push({ id: uid, amount: bal })
+      }
+    }
+
+    let debtorIdx = 0
+    let creditorIdx = 0
+    while (debtorIdx < debtors.length && creditorIdx < creditors.length) {
+      const d = debtors[debtorIdx]
+      const c = creditors[creditorIdx]
+
+      const settleAmt = Math.min(d.amount, c.amount)
+      simplified.push({
+        debtor_id: d.id,
+        creditor_id: c.id,
+        amount: settleAmt
+      })
+
+      d.amount -= settleAmt
+      c.amount -= settleAmt
+
+      if (d.amount < 0.01) debtorIdx++
+      if (c.amount < 0.01) creditorIdx++
+    }
+
+    let emailMap = new Map()
+    if (adminClient) {
+      const { data: userData } = await adminClient.auth.admin.listUsers()
+      if (userData?.users) {
+        userData.users.forEach(u => emailMap.set(u.id, u.email))
+      }
+    }
+
+    const balances = simplified.map(b => ({
+      ...b,
+      debtor_email: emailMap.get(b.debtor_id) || 'Unknown User',
+      creditor_email: emailMap.get(b.creditor_id) || 'Unknown User'
+    }))
+
+    res.json({ success: true, balances })
+  } catch (err) {
+    console.error('[GET /api/splits/balances]', err)
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// ── POST /api/splits/settle — zero out balance between members ────────
+app.post('/api/splits/settle', requireAuth, async (req, res) => {
+  const { workspace_id, debtor_id, creditor_id } = req.body
+
+  if (!workspace_id || !debtor_id || !creditor_id) {
+    return res.status(400).json({ success: false, error: 'workspace_id, debtor_id, and creditor_id are required' })
+  }
+
+  try {
+    const { data: expenses, error: expErr } = await req.supabase
+      .from('expenses')
+      .select('id')
+      .eq('workspace_id', workspace_id)
+      .eq('created_by', creditor_id)
+      .is('deleted_at', null)
+
+    if (expErr) throw expErr
+
+    if (expenses && expenses.length > 0) {
+      const expenseIds = expenses.map(e => e.id)
+      await req.supabase
+        .from('expense_splits')
+        .update({ settled: true })
+        .in('expense_id', expenseIds)
+        .eq('member_id', debtor_id)
+        .eq('settled', false)
+    }
+
+    const { data: expensesRev } = await req.supabase
+      .from('expenses')
+      .select('id')
+      .eq('workspace_id', workspace_id)
+      .eq('created_by', debtor_id)
+      .is('deleted_at', null)
+
+    if (expensesRev && expensesRev.length > 0) {
+      const expenseIdsRev = expensesRev.map(e => e.id)
+      await req.supabase
+        .from('expense_splits')
+        .update({ settled: true })
+        .in('expense_id', expenseIdsRev)
+        .eq('member_id', creditor_id)
+        .eq('settled', false)
+    }
+
+    res.json({ success: true, message: 'Settlement completed' })
+  } catch (err) {
+    console.error('[POST /api/splits/settle]', err)
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// ── GET /api/analytics/trends — aggregate trends by category/month ────
+app.get('/api/analytics/trends', requireAuth, async (req, res) => {
+  const { workspace_id, months } = req.query
+  if (!workspace_id) {
+    return res.status(400).json({ success: false, error: 'workspace_id is required' })
+  }
+
+  const numMonths = parseInt(months) || 6
+  try {
+    const { data: categories, error: catErr } = await req.supabase
+      .from('categories')
+      .select('*')
+      .eq('workspace_id', workspace_id)
+
+    if (catErr) throw catErr
+
+    const monthList = []
+    const now = new Date()
+    for (let i = numMonths - 1; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      monthList.push(d.toISOString().slice(0, 7))
+    }
+
+    const startDate = `${monthList[0]}-01`
+
+    const { data: expenses, error: expErr } = await req.supabase
+      .from('expenses')
+      .select('*')
+      .eq('workspace_id', workspace_id)
+      .is('deleted_at', null)
+      .gte('date', startDate)
+
+    if (expErr) throw expErr
+
+    const catMap = new Map(categories.map(c => [c.id, c.name]))
+
+    const trendMap = new Map()
+    monthList.forEach(m => {
+      const initRow = { month: m }
+      categories.forEach(cat => {
+        initRow[cat.name] = 0
+      })
+      trendMap.set(m, initRow)
+    })
+
+    if (expenses) {
+      for (const exp of expenses) {
+        const m = exp.date?.slice(0, 7)
+        if (trendMap.has(m)) {
+          const row = trendMap.get(m)
+          const catName = catMap.get(exp.category_id) || 'Other'
+          row[catName] = (row[catName] || 0) + Number(exp.amount)
+        }
+      }
+    }
+
+    const trends = Array.from(trendMap.values())
+
+    res.json({
+      success: true,
+      data: trends
+    })
+  } catch (err) {
+    console.error('[GET /api/analytics/trends]', err)
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// ── GET /api/budgets — fetch budgets for a workspace/month ───────────
+app.get('/api/budgets', requireAuth, async (req, res) => {
+  const { workspace_id, month } = req.query
+  if (!workspace_id) {
+    return res.status(400).json({ success: false, error: 'workspace_id is required' })
+  }
+
+  try {
+    let query = req.supabase
+      .from('budgets')
+      .select('*')
+      .eq('workspace_id', workspace_id)
+
+    if (month) {
+      query = query.eq('month', month)
+    }
+
+    const { data, error } = await query
+    if (error) throw error
+
+    res.json({ success: true, data })
+  } catch (err) {
+    console.error('[GET /api/budgets]', err)
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// ── POST /api/budgets — create new budget ────────────────────────────
+app.post('/api/budgets', requireAuth, async (req, res) => {
+  const { workspace_id, category_id, month, amount } = req.body
+
+  if (!workspace_id) return res.status(400).json({ success: false, error: 'workspace_id is required' })
+  if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+    return res.status(400).json({ success: false, error: 'month must be YYYY-MM' })
+  }
+  if (!amount || isNaN(amount) || Number(amount) <= 0) {
+    return res.status(400).json({ success: false, error: 'amount must be a positive number' })
+  }
+
+  try {
+    let checkQuery = req.supabase
+      .from('budgets')
+      .select('id')
+      .eq('workspace_id', workspace_id)
+      .eq('month', month)
+
+    if (category_id === null || category_id === undefined) {
+      checkQuery = checkQuery.is('category_id', null)
+    } else {
+      checkQuery = checkQuery.eq('category_id', category_id)
+    }
+
+    const { data: existing, error: checkError } = await checkQuery.maybeSingle()
+    if (checkError) throw checkError
+    if (existing) {
+      return res.status(409).json({ success: false, error: 'A budget already exists for this category and month.' })
+    }
+
+    const { data, error } = await req.supabase
+      .from('budgets')
+      .insert({
+        workspace_id,
+        category_id: category_id || null,
+        month,
+        amount: Number(amount)
+      })
+      .select()
+      .single()
+
+    if (error) throw error
+
+    if (adminClient) {
+      await adminClient
+        .from('alert_logs')
+        .delete()
+        .eq('workspace_id', workspace_id)
+        .eq('month', month)
+    }
+
+    res.status(201).json({ success: true, data })
+  } catch (err) {
+    console.error('[POST /api/budgets]', err)
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// ── PATCH /api/budgets/:id — update budget amount ────────────────────
+app.patch('/api/budgets/:id', requireAuth, async (req, res) => {
+  const { id } = req.params
+  const { amount } = req.body
+
+  if (!amount || isNaN(amount) || Number(amount) <= 0) {
+    return res.status(400).json({ success: false, error: 'amount must be a positive number' })
+  }
+
+  try {
+    const { data: budget, error: fetchErr } = await req.supabase
+      .from('budgets')
+      .select('workspace_id, month')
+      .eq('id', id)
+      .maybeSingle()
+
+    if (fetchErr) throw fetchErr
+    if (!budget) return res.status(404).json({ success: false, error: 'Budget not found' })
+
+    const { data, error } = await req.supabase
+      .from('budgets')
+      .update({ amount: Number(amount) })
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) throw error
+
+    if (adminClient) {
+      await adminClient
+        .from('alert_logs')
+        .delete()
+        .eq('workspace_id', budget.workspace_id)
+        .eq('month', budget.month)
+    }
+
+    res.json({ success: true, data })
+  } catch (err) {
+    console.error('[PATCH /api/budgets/:id]', err)
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// ── DELETE /api/budgets/:id — delete budget ──────────────────────────
+app.delete('/api/budgets/:id', requireAuth, async (req, res) => {
+  const { id } = req.params
+
+  try {
+    const { data: budget, error: fetchErr } = await req.supabase
+      .from('budgets')
+      .select('workspace_id, month')
+      .eq('id', id)
+      .maybeSingle()
+
+    if (fetchErr) throw fetchErr
+    if (!budget) return res.status(404).json({ success: false, error: 'Budget not found' })
+
+    const { error } = await req.supabase
+      .from('budgets')
+      .delete()
+      .eq('id', id)
+
+    if (error) throw error
+
+    if (adminClient) {
+      await adminClient
+        .from('alert_logs')
+        .delete()
+        .eq('workspace_id', budget.workspace_id)
+        .eq('month', budget.month)
+    }
+
+    res.json({ success: true })
+  } catch (err) {
+    console.error('[DELETE /api/budgets/:id]', err)
     res.status(500).json({ success: false, error: err.message })
   }
 })

@@ -233,74 +233,75 @@ export async function scanSms(smsText, categories = []) {
 // ── Budgets ───────────────────────────────────────────────────────────
 
 export async function getBudgets(workspaceId, month) {
-  const query = supabase
-    .from('budgets')
-    .select('*')
-    .eq('workspace_id', workspaceId)
+  const token = await getToken()
+  const params = new URLSearchParams({ workspace_id: workspaceId })
+  if (month) params.set('month', month)
 
-  if (month) query.eq('month', month)
-
-  const { data, error } = await query
-  if (error) throw error
-  return { success: true, data }
+  const res = await fetch(`${BACKEND}/api/budgets?${params}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.error || 'Failed to fetch budgets')
+  return json
 }
 
-/**
- * Insert or update a budget row.
- * Clears alert_logs for the workspace+month so stale banners don't reappear
- * after any budget amount changes.
- */
 export async function upsertBudget(workspaceId, categoryId, month, amount) {
-  const { data, error } = await supabase
-    .from('budgets')
-    .upsert(
-      {
-        workspace_id: workspaceId,
-        category_id:  categoryId ?? null,
-        month,
-        amount:       Number(amount),
-      },
-      { onConflict: 'workspace_id,category_id,month' }
-    )
-    .select()
-    .single()
-
-  if (error) throw error
-
-  // Clear stale alert_logs so the engine re-evaluates against the new amount
-  // and banners don't show old threshold crossings that no longer apply.
   const token = await getToken()
-  await fetch(`${BACKEND}/api/alert-logs`, {
-    method:  'DELETE',
-    headers: {
-      'Content-Type':  'application/json',
-      'Authorization': `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      workspace_id: workspaceId,
-      month,
-    }),
-  }).catch(err => console.warn('[upsertBudget] failed to clear alert logs:', err))
 
-  return { success: true, data }
+  const budgetsRes = await getBudgets(workspaceId, month)
+  const existing = (budgetsRes.data || []).find(b => 
+    categoryId === null ? b.category_id === null : b.category_id === categoryId
+  )
+
+  let res
+  if (existing) {
+    res = await fetch(`${BACKEND}/api/budgets/${existing.id}`, {
+      method:  'PATCH',
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ amount: Number(amount) })
+    })
+  } else {
+    res = await fetch(`${BACKEND}/api/budgets`, {
+      method:  'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        workspace_id: workspaceId,
+        category_id:  categoryId || null,
+        month,
+        amount:       Number(amount)
+      })
+    })
+  }
+
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.error || 'Failed to save budget')
+  return json
 }
 
 export async function deleteBudget(workspaceId, categoryId, month) {
-  const query = supabase
-    .from('budgets')
-    .delete()
-    .eq('workspace_id', workspaceId)
-    .eq('month', month)
+  const token = await getToken()
 
-  if (categoryId === null) {
-    query.is('category_id', null)
-  } else {
-    query.eq('category_id', categoryId)
-  }
+  const budgetsRes = await getBudgets(workspaceId, month)
+  const existing = (budgetsRes.data || []).find(b => 
+    categoryId === null ? b.category_id === null : b.category_id === categoryId
+  )
 
-  const { error } = await query
-  if (error) throw error
-  return { success: true }
+  if (!existing) return { success: true }
+
+  const res = await fetch(`${BACKEND}/api/budgets/${existing.id}`, {
+    method:  'DELETE',
+    headers: { Authorization: `Bearer ${token}` }
+  })
+
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.error || 'Failed to delete budget')
+  return json
 }
 
 // ── Alert logs (budget warning banners) ───────────────────────────────
@@ -535,5 +536,66 @@ export async function getActivityLogs(workspaceId) {
   })
   const json = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(json.error || 'Failed to fetch activity logs')
+  return json
+}
+
+// ── Split & Group ────────────────────────────────────────────────────
+export async function splitExpense(expenseId, splits) {
+  const token = await getToken()
+  const res = await fetch(`${BACKEND}/api/expenses/${expenseId}/split`, {
+    method:  'POST',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({ splits }),
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.error || 'Failed to save expense splits')
+  return json
+}
+
+export async function getSplitsBalances(workspaceId) {
+  const token = await getToken()
+  const res = await fetch(`${BACKEND}/api/splits/balances?workspace_id=${workspaceId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.error || 'Failed to fetch splits balances')
+  return json
+}
+
+export async function settleBalance(workspaceId, debtorId, creditorId) {
+  const token = await getToken()
+  const res = await fetch(`${BACKEND}/api/splits/settle`, {
+    method:  'POST',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({ workspace_id: workspaceId, debtor_id: debtorId, creditor_id: creditorId }),
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.error || 'Failed to settle balance')
+  return json
+}
+
+export async function getWorkspaceMembers(workspaceId) {
+  const token = await getToken()
+  const res = await fetch(`${BACKEND}/api/workspace/${workspaceId}/members`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.error || 'Failed to fetch workspace members')
+  return json
+}
+
+export async function getAnalyticsTrends(workspaceId, months = 6) {
+  const token = await getToken()
+  const res = await fetch(`${BACKEND}/api/analytics/trends?workspace_id=${workspaceId}&months=${months}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.error || 'Failed to fetch analytics trends')
   return json
 }

@@ -349,7 +349,7 @@ export default function ExpensesPage({
   const handleAdd = useCallback((data) =>
     new Promise((resolve, reject) => {
       addExpense(data, {
-        onSuccess: () => { setShowAdd(false); setPrefill(null); resolve() },
+        onSuccess: (res) => { setShowAdd(false); setPrefill(null); resolve(res) },
         onError:   (err) => reject(err),
       })
     }), [addExpense])

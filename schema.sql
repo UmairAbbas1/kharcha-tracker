@@ -181,4 +181,50 @@ FOR EACH ROW EXECUTE FUNCTION public.log_activity_trigger();
 CREATE INDEX IF NOT EXISTS activity_logs_workspace_idx ON public.activity_logs(workspace_id);
 
 
+-- Create expense_splits table
+CREATE TABLE IF NOT EXISTS public.expense_splits (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  expense_id UUID REFERENCES public.expenses(id) ON DELETE CASCADE NOT NULL,
+  member_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  share_amount NUMERIC(12, 2) NOT NULL,
+  settled BOOLEAN DEFAULT FALSE NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Enable Row Level Security (RLS)
+ALTER TABLE public.expense_splits ENABLE ROW LEVEL SECURITY;
+
+-- Policies for expense_splits
+-- 1. Users can view splits linked to their expenses or splits belonging to them
+CREATE POLICY "Users can view splits linked to their expenses or splits belonging to them"
+ON public.expense_splits
+FOR SELECT
+USING (
+  auth.uid() = member_id OR
+  expense_id IN (
+    SELECT e.id FROM public.expenses e 
+    WHERE e.workspace_id IN (
+      SELECT m.workspace_id FROM public.workspace_members m WHERE m.user_id = auth.uid()
+    )
+  )
+);
+
+-- 2. Users can modify splits in their workspaces
+CREATE POLICY "Users can modify splits in their workspaces"
+ON public.expense_splits
+FOR ALL
+USING (
+  expense_id IN (
+    SELECT e.id FROM public.expenses e 
+    WHERE e.workspace_id IN (
+      SELECT m.workspace_id FROM public.workspace_members m WHERE m.user_id = auth.uid()
+    )
+  )
+);
+
+CREATE INDEX IF NOT EXISTS expense_splits_expense_idx ON public.expense_splits(expense_id);
+CREATE INDEX IF NOT EXISTS expense_splits_member_idx ON public.expense_splits(member_id);
+CREATE INDEX IF NOT EXISTS expense_splits_unsettled_idx ON public.expense_splits(member_id) WHERE NOT settled;
+
+
 
