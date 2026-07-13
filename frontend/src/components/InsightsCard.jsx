@@ -106,7 +106,7 @@ function TurnBubble({ turn }) {
   )
 }
 
-export default function InsightsCard({ workspaceId, categories = [] }) {
+export default function InsightsCard({ workspaceId, categories = [], autoFocus, onClearAutoFocus }) {
   const [history,  setHistory]  = useState([])
   const [input,    setInput]    = useState('')
   const [status,   setStatus]   = useState('idle')   // idle | thinking | error
@@ -126,6 +126,17 @@ export default function InsightsCard({ workspaceId, categories = [] }) {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [history])
+
+  // Handle Command Palette autoFocus trigger
+  useEffect(() => {
+    if (autoFocus && inputRef.current) {
+      setTimeout(() => {
+        inputRef.current?.focus()
+        inputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        onClearAutoFocus?.()
+      }, 100)
+    }
+  }, [autoFocus])
 
   const isGroqMissing = false  // backend returns 503 if key missing — handled in submit
 

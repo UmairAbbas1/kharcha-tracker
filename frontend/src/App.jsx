@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { AuthProvider, useAuth }           from './context/AuthContext'
 import { WorkspaceProvider, useWorkspace } from './context/WorkspaceContext'
 import AuthPage           from './pages/AuthPage'
@@ -11,6 +11,7 @@ import ExportPage         from './pages/ExportPage'
 import AlertHistoryPage   from './pages/AlertHistoryPage'
 import GuidePage          from './pages/GuidePage'
 import Sidebar            from './components/Sidebar'
+import CommandPalette     from './components/CommandPalette'
 
 // ── Module placeholder component ─────────────────────────────────────
 function ComingSoon({ label }) {
@@ -33,6 +34,27 @@ function AppInner() {
   const { activeWorkspace, loading: wsLoading } = useWorkspace()
   const [activeModule, setActiveModule] = useState('dashboard')
 
+  // Command palette related states
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false)
+  const [expenseSearchQuery, setExpenseSearchQuery] = useState('')
+  const [autoOpenAddExpense, setAutoOpenAddExpense] = useState(false) // can be true or prefill object
+  const [autoFocusAiAssistant, setAutoFocusAiAssistant] = useState(false)
+
+  // Listen for global shortcut Cmd+K / Ctrl+K
+  useEffect(() => {
+    if (!user) return
+
+    const handleKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setIsCommandPaletteOpen(open => !open)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [user])
+
   if (authLoading || wsLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center"
@@ -54,10 +76,41 @@ function AppInner() {
     </div>
   )
 
+  const handleTriggerAddExpense = (prefillData) => {
+    if (activeModule !== 'dashboard' && activeModule !== 'expenses') {
+      setActiveModule('expenses')
+    }
+    setAutoOpenAddExpense(prefillData || true)
+  }
+
+  const handleTriggerAskAi = () => {
+    setActiveModule('dashboard')
+    setAutoFocusAiAssistant(true)
+  }
+
+  const handleSelectRecentExpense = (expense) => {
+    setActiveModule('expenses')
+    setExpenseSearchQuery(expense.title)
+  }
+
   const renderModule = () => {
     switch (activeModule) {
-      case 'dashboard': return <DashboardPage />
-      case 'expenses':  return <ExpensesPage />
+      case 'dashboard': return (
+        <DashboardPage
+          autoOpenAdd={autoOpenAddExpense}
+          onClearAutoOpenAdd={() => setAutoOpenAddExpense(false)}
+          autoFocusAi={autoFocusAiAssistant}
+          onClearAutoFocusAi={() => setAutoFocusAiAssistant(false)}
+        />
+      )
+      case 'expenses':  return (
+        <ExpensesPage
+          initialSearchQuery={expenseSearchQuery}
+          onClearSearchQuery={() => setExpenseSearchQuery('')}
+          autoOpenAdd={autoOpenAddExpense}
+          onClearAutoOpenAdd={() => setAutoOpenAddExpense(false)}
+        />
+      )
       case 'budgets':   return <BudgetsPage />
       case 'insights':  return <ComingSoon label="Smart Insights" />
       case 'analytics': return <AnalyticsPage />
@@ -81,6 +134,17 @@ function AppInner() {
       <main className="flex-1 min-w-0 overflow-y-auto">
         {renderModule()}
       </main>
+
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        workspaceId={activeWorkspace?.id}
+        activeModule={activeModule}
+        onNavigate={setActiveModule}
+        onTriggerAddExpense={handleTriggerAddExpense}
+        onTriggerAskAi={handleTriggerAskAi}
+        onSelectRecentExpense={handleSelectRecentExpense}
+      />
     </div>
   )
 }

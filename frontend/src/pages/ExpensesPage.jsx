@@ -125,7 +125,12 @@ function ExpRow({ expense, onDelete }) {
 }
 
 // ── Main page ─────────────────────────────────────────────────────────
-export default function ExpensesPage() {
+export default function ExpensesPage({
+  initialSearchQuery,
+  onClearSearchQuery,
+  autoOpenAdd,
+  onClearAutoOpenAdd,
+}) {
   const { user }                                = useAuth()
   const { activeWorkspace, workspaces,
           switchWorkspace }                     = useWorkspace()
@@ -137,6 +142,15 @@ export default function ExpensesPage() {
 
   const [categories,  setCategories]  = useState([])
   const [catLoading,  setCatLoading]  = useState(true)
+
+  // Handle initial search query from Command Palette
+  useEffect(() => {
+    if (initialSearchQuery !== undefined && initialSearchQuery !== '') {
+      setRawSearch(initialSearchQuery)
+      setSearch(initialSearchQuery)
+      onClearSearchQuery?.()
+    }
+  }, [initialSearchQuery])
 
   // ── Filter / sort state ───────────────────────────────────
   const [rawSearch,   setRawSearch]   = useState('')
@@ -168,6 +182,20 @@ export default function ExpensesPage() {
     const id = setTimeout(() => setSearch(rawSearch), 150)
     return () => clearTimeout(id)
   }, [rawSearch])
+
+  // Handle auto-open add expense from Command Palette
+  useEffect(() => {
+    if (autoOpenAdd) {
+      setShowAdd(true)
+      if (typeof autoOpenAdd === 'object' && autoOpenAdd !== null) {
+        setPrefill(autoOpenAdd)
+      }
+      onClearAutoOpenAdd?.()
+      setTimeout(() => {
+        document.querySelector('input[placeholder="Expense title (e.g. KFC)"]')?.focus()
+      }, 50)
+    }
+  }, [autoOpenAdd])
 
   // Reset to page 1 on any filter/sort change
   useEffect(() => { setPage(1) }, [search, catFilter, monthFilter, sortCol, sortDir])

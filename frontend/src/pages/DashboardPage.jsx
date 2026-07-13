@@ -27,7 +27,12 @@ import MonthlySummaryCard from '../components/MonthlySummaryCard'
 import InsightsCard       from '../components/InsightsCard'
 import { Settings, Plus } from 'lucide-react'
 
-export default function DashboardPage() {
+export default function DashboardPage({
+  autoOpenAdd,
+  onClearAutoOpenAdd,
+  autoFocusAi,
+  onClearAutoFocusAi,
+}) {
   const { user }                                         = useAuth()
   const { activeWorkspace, workspaces, switchWorkspace } = useWorkspace()
   const [categories,     setCategories]     = useState([])
@@ -39,6 +44,23 @@ export default function DashboardPage() {
   const [budgetOpen,     setBudgetOpen]     = useState(false)
   const [sheetOpen,      setSheetOpen]      = useState(false)
   const [prefill,        setPrefill]        = useState(null)
+
+  // Handle auto-open add expense from Command Palette
+  useEffect(() => {
+    if (autoOpenAdd) {
+      if (window.innerWidth < 768) {
+        setSheetOpen(true)
+      } else {
+        setTimeout(() => {
+          document.querySelector('input[placeholder="Expense title (e.g. KFC)"]')?.focus()
+        }, 50)
+      }
+      if (typeof autoOpenAdd === 'object' && autoOpenAdd !== null) {
+        setPrefill(autoOpenAdd)
+      }
+      onClearAutoOpenAdd?.()
+    }
+  }, [autoOpenAdd])
 
   const currentMonth = new Date().toISOString().slice(0, 7)
   const prevMonth    = (() => {
@@ -228,6 +250,8 @@ export default function DashboardPage() {
             <InsightsCard
               workspaceId={activeWorkspace.id}
               categories={categories}
+              autoFocus={autoFocusAi}
+              onClearAutoFocus={onClearAutoFocusAi}
             />
           </div>
         )}
