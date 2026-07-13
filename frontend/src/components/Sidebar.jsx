@@ -8,7 +8,8 @@ import { useState } from 'react'
 import {
   LayoutDashboard, Receipt, PiggyBank, Users, Sparkles,
   BarChart3, Download, Settings, LogOut, Menu, X,
-  Bell, BookOpen, RefreshCw, Image as ImageIcon,
+  Bell, BookOpen, RefreshCw, Image as ImageIcon, History,
+  Sun, Moon,
 } from 'lucide-react'
 import KharchaLogo from './KharchaLogo'
 
@@ -18,6 +19,7 @@ const NAV_ITEMS = [
   { id: 'budgets',    label: 'Budgets',         icon: PiggyBank       },
   { id: 'recurring',  label: 'Recurring',       icon: RefreshCw       },
   { id: 'vault',      label: 'Receipt Vault',   icon: ImageIcon       },
+  { id: 'activity',   label: 'Activity Log',    icon: History         },
   { id: 'insights',   label: 'Smart Insights',  icon: Sparkles        },
   { id: 'analytics',  label: 'Analytics',       icon: BarChart3       },
   { id: 'split',      label: 'Split & Group',   icon: Users           },
@@ -35,13 +37,15 @@ export default function Sidebar({
   setCollapsed,
   unreadNotifCount,
   onToggleNotif,
+  darkMode,
+  onToggleDarkMode,
 }) {
   const [mobileOpen, setMobileOpen] = useState(false)
 
   const NavItem = ({ item }) => {
     const Icon    = item.icon
     const active  = activeModule === item.id
-    const soon    = ['split', 'analytics', 'guide'].includes(item.id)
+    const soon    = [].includes(item.id)
 
     return (
       <button
@@ -51,10 +55,10 @@ export default function Sidebar({
         className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm
                    font-medium transition-all group disabled:cursor-not-allowed"
         style={{
-          background: active ? '#EFF6FF' : 'transparent',
-          color:      active ? '#2563EB' : soon ? '#D1D5DB' : '#374151',
+          background: active ? 'rgba(37, 99, 235, 0.15)' : 'transparent',
+          color:      active ? '#2563EB' : soon ? '#D1D5DB' : 'var(--color-ink)',
         }}
-        onMouseEnter={e => { if (!active && !soon) e.currentTarget.style.background = '#F9FAFB' }}
+        onMouseEnter={e => { if (!active && !soon) e.currentTarget.style.background = 'var(--color-surface)' }}
         onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent' }}
       >
         <Icon
@@ -119,14 +123,14 @@ export default function Sidebar({
         {NAV_ITEMS.map(item => <NavItem key={item.id} item={item} />)}
       </nav>
 
-      {/* Bottom: settings + sign out */}
-      <div className="px-2 pb-4 pt-2 border-t" style={{ borderColor: '#F3F4F6' }}>
+      {/* Bottom: settings + dark mode + sign out */}
+      <div className="px-2 pb-4 pt-2 border-t" style={{ borderColor: 'var(--color-border)' }}>
         <button
           onClick={onToggleNotif}
           className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm
                      font-medium transition relative"
-          style={{ color: '#6B7280' }}
-          onMouseEnter={e => (e.currentTarget.style.background = '#F9FAFB')}
+          style={{ color: 'var(--color-slate)' }}
+          onMouseEnter={e => (e.currentTarget.style.background = 'var(--color-surface)')}
           onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
         >
           <Bell size={17} strokeWidth={2} style={{ flexShrink: 0, color: '#9CA3AF' }} />
@@ -148,11 +152,27 @@ export default function Sidebar({
         </button>
 
         <button
+          onClick={onToggleDarkMode}
+          className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm
+                     font-medium transition"
+          style={{ color: 'var(--color-slate)' }}
+          onMouseEnter={e => (e.currentTarget.style.background = 'var(--color-surface)')}
+          onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+        >
+          {darkMode ? (
+            <Sun size={17} strokeWidth={2} style={{ flexShrink: 0, color: '#F59E0B' }} />
+          ) : (
+            <Moon size={17} strokeWidth={2} style={{ flexShrink: 0, color: '#9CA3AF' }} />
+          )}
+          {!collapsed && <span>{darkMode ? 'Light Mode' : 'Dark Mode'}</span>}
+        </button>
+
+        <button
           onClick={() => { onNavigate('settings'); setMobileOpen(false) }}
           className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm
                      font-medium transition"
-          style={{ color: '#6B7280' }}
-          onMouseEnter={e => (e.currentTarget.style.background = '#F9FAFB')}
+          style={{ color: 'var(--color-slate)' }}
+          onMouseEnter={e => (e.currentTarget.style.background = 'var(--color-surface)')}
           onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
         >
           <Settings size={17} strokeWidth={2} style={{ flexShrink: 0, color: '#9CA3AF' }} />
@@ -163,7 +183,7 @@ export default function Sidebar({
           onClick={onSignOut}
           className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm
                      font-medium transition"
-          style={{ color: '#6B7280' }}
+          style={{ color: 'var(--color-slate)' }}
           onMouseEnter={e => (e.currentTarget.style.background = '#FEF2F2')}
           onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
         >
@@ -180,7 +200,7 @@ export default function Sidebar({
       <button
         className="fixed top-4 left-4 z-50 md:hidden w-9 h-9 rounded-xl
                    flex items-center justify-center shadow-card"
-        style={{ background: '#fff', border: '1px solid #E5E7EB', color: '#374151' }}
+        style={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', color: 'var(--color-ink)' }}
         onClick={() => setMobileOpen(v => !v)}
       >
         {mobileOpen ? <X size={16} /> : <Menu size={16} />}
@@ -190,7 +210,7 @@ export default function Sidebar({
       <button
         className="fixed top-4 right-4 z-50 md:hidden w-9 h-9 rounded-xl
                    flex items-center justify-center shadow-card relative"
-        style={{ background: '#fff', border: '1px solid #E5E7EB', color: '#374151' }}
+        style={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', color: 'var(--color-ink)' }}
         onClick={onToggleNotif}
       >
         <Bell size={16} />
@@ -223,7 +243,7 @@ export default function Sidebar({
       <div
         className="fixed top-0 left-0 h-full z-40 md:hidden w-64 shadow-modal"
         style={{
-          background:  '#FFFFFF',
+          background:  'var(--color-card)',
           transform:   mobileOpen ? 'translateX(0)' : 'translateX(-100%)',
           transition:  'transform 280ms cubic-bezier(0.32, 0.72, 0, 1)',
         }}
@@ -237,8 +257,8 @@ export default function Sidebar({
                    border-r overflow-hidden transition-all duration-200"
         style={{
           width:       collapsed ? '64px' : '220px',
-          background:  '#FFFFFF',
-          borderColor: '#F3F4F6',
+          background:  'var(--color-card)',
+          borderColor: 'var(--color-border)',
         }}
       >
         {sidebarContent}

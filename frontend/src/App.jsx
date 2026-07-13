@@ -20,6 +20,10 @@ import {
 } from './api'
 import { supabase } from './lib/supabase'
 import RecurringPage from './pages/RecurringPage'
+import ReceiptVaultPage from './pages/ReceiptVaultPage'
+import ActivityLogPage from './pages/ActivityLogPage'
+import SettingsPage from './pages/SettingsPage'
+import InsightsCard from './components/InsightsCard'
 
 // ── Module placeholder component ─────────────────────────────────────
 function ComingSoon({ label }) {
@@ -58,6 +62,37 @@ function AppInner() {
 
   // Recurring Expenses Draft states
   const [recurringDrafts, setRecurringDrafts] = useState([])
+
+  // Dark Mode states
+  const [darkMode, setDarkMode] = useState(() => {
+    const stored = localStorage.getItem('kharcha_theme')
+    if (stored) return stored === 'dark'
+    return window.matchMedia('(prefers-color-scheme: dark)').matches
+  })
+
+  // Sync dark mode class on root element
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add('dark')
+    } else {
+      document.documentElement.classList.remove('dark')
+    }
+    localStorage.setItem('kharcha_theme', darkMode ? 'dark' : 'light')
+  }, [darkMode])
+
+  // Fetch notifications helper
+  const fetchNotifications = async () => {
+    if (!activeWorkspace?.id) return
+    setNotifLoading(true)
+    try {
+      const res = await getNotifications(activeWorkspace.id)
+      setNotifications(res.data || [])
+    } catch (err) {
+      console.error('[AppInner] fetchNotifications failed:', err)
+    } finally {
+      setNotifLoading(false)
+    }
+  }
 
   // Fetch recurring drafts
   const fetchDrafts = async () => {
@@ -234,13 +269,34 @@ function AppInner() {
       )
       case 'budgets':   return <BudgetsPage />
       case 'recurring': return <RecurringPage />
-      case 'insights':  return <ComingSoon label="Smart Insights" />
+      case 'vault':     return <ReceiptVaultPage />
+      case 'activity':  return <ActivityLogPage />
+      case 'insights':  return (
+        <div className="min-h-screen py-8 md:py-10" style={{ background: 'var(--color-surface)' }}>
+          <div className="max-w-3xl mx-auto px-4">
+            <header className="mb-6">
+              <h1 className="text-lg font-bold leading-tight" style={{ color: 'var(--color-ink)' }}>
+                Smart Insights
+              </h1>
+              <p className="text-xs mt-1" style={{ color: 'var(--color-slate)' }}>
+                Ask questions in Urdu, English, or Roman Urdu about your spending history.
+              </p>
+            </header>
+            <InsightsCard autoFocus={true} />
+          </div>
+        </div>
+      )
       case 'analytics': return <AnalyticsPage />
       case 'split':     return <SplitPage />
       case 'export':    return <ExportPage />
       case 'alerts':    return <AlertHistoryPage />
       case 'guide':     return <GuidePage />
-      case 'settings':  return <ComingSoon label="Settings" />
+      case 'settings':  return (
+        <SettingsPage
+          darkMode={darkMode}
+          onToggleDarkMode={() => setDarkMode(d => !d)}
+        />
+      )
       default:          return <DashboardPage />
     }
   }
@@ -256,6 +312,8 @@ function AppInner() {
         setCollapsed={setSidebarCollapsed}
         unreadNotifCount={unreadCount}
         onToggleNotif={() => setIsNotifOpen(o => !o)}
+        darkMode={darkMode}
+        onToggleDarkMode={() => setDarkMode(d => !d)}
       />
       <main className="flex-1 min-w-0 overflow-y-auto">
         {recurringDrafts.length > 0 && (

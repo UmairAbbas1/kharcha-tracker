@@ -212,6 +212,22 @@ export default function CommandPalette({
     setScanError('')
 
     try {
+      let receiptUrl = null
+      const shouldSave = localStorage.getItem('kharcha_save_receipts') === 'true'
+
+      if (shouldSave && workspaceId) {
+        const fileExt = file.name.split('.').pop()
+        const fileName = `${workspaceId}/${Date.now()}.${fileExt}`
+        const { data, error } = await supabase.storage.from('receipts').upload(fileName, file)
+        
+        if (error) {
+          console.warn('[CommandPalette Scanner] Storage upload failed:', error.message)
+        } else {
+          const { data: { publicUrl } } = supabase.storage.from('receipts').getPublicUrl(fileName)
+          receiptUrl = publicUrl
+        }
+      }
+
       const dataUri = await new Promise((resolve, reject) => {
         const reader = new FileReader()
         reader.onload = () => resolve(reader.result)
@@ -223,7 +239,7 @@ export default function CommandPalette({
       const result = await scanReceipt(dataUri, categoryNames)
 
       onClose()
-      onTriggerAddExpense(result) // Pass OCR result to form prefill
+      onTriggerAddExpense({ ...result, receipt_url: receiptUrl }) // Pass OCR result & receiptUrl to form prefill
     } catch (err) {
       console.error('[CommandPalette Scan] Failed:', err)
       setScanError(err.message || 'Scan failed. Please add manually.')

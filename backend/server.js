@@ -499,6 +499,137 @@ app.post('/api/scan-receipt', requireAuth, async (req, res) => {
   }
 })
 
+// ── GET /api/expenses — search, filter, sort, and paginate expenses ──
+app.get('/api/expenses', requireAuth, async (req, res) => {
+  const { workspace_id, search, category_id, start_date, end_date, sort_by, sort_dir, limit, offset } = req.query
+  if (!workspace_id) {
+    return res.status(400).json({ success: false, error: 'workspace_id is required' })
+  }
+
+  try {
+    let dbQuery = req.supabase
+      .from('expenses')
+      .select('*', { count: 'exact' })
+      .eq('workspace_id', workspace_id)
+      .is('deleted_at', null)
+
+    if (search) {
+      dbQuery = dbQuery.ilike('title', `%${search.trim()}%`)
+    }
+    if (category_id) {
+      dbQuery = dbQuery.eq('category_id', category_id)
+    }
+    if (start_date) {
+      dbQuery = dbQuery.gte('date', start_date)
+    }
+    if (end_date) {
+      dbQuery = dbQuery.lte('date', end_date)
+    }
+
+    const sCol = sort_by || 'date'
+    const sDir = sort_dir || 'desc'
+    dbQuery = dbQuery.order(sCol, { ascending: sDir === 'asc' })
+
+    if (sCol !== 'id') {
+      dbQuery = dbQuery.order('id', { ascending: false })
+    }
+
+    const pLimit = parseInt(limit) || 25
+    const pOffset = parseInt(offset) || 0
+    dbQuery = dbQuery.range(pOffset, pOffset + pLimit - 1)
+
+    const { data: expenses, count, error } = await dbQuery
+    if (error) throw error
+
+    // Safe separate category lookup to satisfy implicit join drop safeguard (REQ-EXP-24)
+    const { data: categories, error: catError } = await req.supabase
+      .from('categories')
+      .select('*')
+      .eq('workspace_id', workspace_id)
+
+    if (catError) throw catError
+
+    const catMap = new Map(categories.map(c => [c.id, c]))
+    const processed = (expenses || []).map(e => ({
+      ...e,
+      categories: catMap.get(e.category_id) || null
+    }))
+
+    res.json({
+      success: true,
+      data: processed,
+      count: count || 0,
+    })
+  } catch (err) {
+    console.error('[GET /api/expenses]', err)
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// ── PATCH /api/expenses/:id — update an expense ─────────────────────
+app.patch('/api/expenses/:id', requireAuth, async (req, res) => {
+  const { id } = req.params
+  const { title, amount, category_id, date } = req.body
+
+  try {
+    const { data: expense, error: fetchErr } = await req.supabase
+      .from('expenses')
+      .select('id, workspace_id, title')
+      .eq('id', id)
+      .is('deleted_at', null)
+      .maybeSingle()
+
+    if (fetchErr) throw fetchErr
+    if (!expense) return res.status(404).json({ success: false, error: 'Expense not found' })
+
+    const updates = {}
+    if (title !== undefined) updates.title = title.trim()
+    if (amount !== undefined) {
+      if (isNaN(amount) || Number(amount) <= 0) {
+        return res.status(400).json({ success: false, error: 'Amount must be a positive number' })
+      }
+      updates.amount = Number(amount)
+    }
+    if (category_id !== undefined) updates.category_id = category_id || null
+    if (date !== undefined) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return res.status(400).json({ success: false, error: 'Date must be in YYYY-MM-DD format' })
+      }
+      updates.date = date
+    }
+
+    const { data, error } = await req.supabase
+      .from('expenses')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) throw error
+
+    let category = null
+    if (data.category_id) {
+      const { data: cat } = await req.supabase
+        .from('categories')
+        .select('*')
+        .eq('id', data.category_id)
+        .maybeSingle()
+      category = cat
+    }
+
+    res.json({
+      success: true,
+      data: {
+        ...data,
+        categories: category
+      }
+    })
+  } catch (err) {
+    console.error('[PATCH /api/expenses/:id]', err)
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
 // ── DELETE /api/expenses/:id — soft-delete an expense ───────
 app.delete('/api/expenses/:id', requireAuth, async (req, res) => {
   const { id } = req.params
@@ -1181,6 +1312,30 @@ app.get('/api/recurring/drafts', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('[GET /api/recurring/drafts]', err)
     res.status(500).json({ success: false, error: 'Failed to fetch recurring drafts' })
+  }
+})
+
+// ── Activity Log Endpoints ──────────────────────────────────────────
+// Fetch recent activity logs for a workspace
+app.get('/api/activity-logs', requireAuth, async (req, res) => {
+  const { workspace_id } = req.query
+  if (!workspace_id) {
+    return res.status(400).json({ success: false, error: 'workspace_id is required' })
+  }
+
+  try {
+    const { data, error } = await req.supabase
+      .from('activity_logs')
+      .select('*')
+      .eq('workspace_id', workspace_id)
+      .order('created_at', { ascending: false })
+      .limit(100)
+
+    if (error) throw error
+    res.json({ success: true, data })
+  } catch (err) {
+    console.error('[GET /api/activity-logs]', err)
+    res.status(500).json({ success: false, error: 'Failed to fetch activity logs' })
   }
 })
 

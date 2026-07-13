@@ -24,17 +24,40 @@ async function getToken() {
 }
 
 // ── Expenses ──────────────────────────────────────────────────────────
-export async function getExpenses(workspaceId) {
-  const { data, error } = await supabase
-    .from('expenses')
-    .select('*, categories(name, icon, color)')
-    .eq('workspace_id', workspaceId)
-    .is('deleted_at', null)
-    .order('date', { ascending: false })
-    .order('id', { ascending: false })
+export async function getExpenses(workspaceId, filters = {}) {
+  const token = await getToken()
+  const params = new URLSearchParams({ workspace_id: workspaceId })
 
-  if (error) throw error
-  return { success: true, data }
+  if (filters.search) params.set('search', filters.search)
+  if (filters.category_id) params.set('category_id', filters.category_id)
+  if (filters.start_date) params.set('start_date', filters.start_date)
+  if (filters.end_date) params.set('end_date', filters.end_date)
+  if (filters.sort_by) params.set('sort_by', filters.sort_by)
+  if (filters.sort_dir) params.set('sort_dir', filters.sort_dir)
+  if (filters.limit !== undefined) params.set('limit', String(filters.limit))
+  if (filters.offset !== undefined) params.set('offset', String(filters.offset))
+
+  const res = await fetch(`${BACKEND}/api/expenses?${params}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.error || 'Failed to fetch expenses')
+  return json
+}
+
+export async function updateExpense(id, updates) {
+  const token = await getToken()
+  const res = await fetch(`${BACKEND}/api/expenses/${id}`, {
+    method:  'PATCH',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify(updates),
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.error || 'Failed to update expense')
+  return json
 }
 
 // Routes through backend so the alert engine can fire after insert
@@ -501,5 +524,16 @@ export async function getRecurringDrafts(workspaceId) {
   })
   const json = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(json.error || 'Failed to fetch recurring drafts')
+  return json
+}
+
+// ── Activity Logs ────────────────────────────────────────────────────
+export async function getActivityLogs(workspaceId) {
+  const token = await getToken()
+  const res = await fetch(`${BACKEND}/api/activity-logs?workspace_id=${workspaceId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.error || 'Failed to fetch activity logs')
   return json
 }

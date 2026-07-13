@@ -19,6 +19,14 @@
   --shadow-panel: 0 4px 12px rgba(0,0,0,0.08);
 }
 
+.dark {
+  --color-ink:     #F9FAFB;
+  --color-slate:   #9CA3AF;
+  --color-surface: #0B0F19; /* premium deep dark background */
+  --color-card:    #161E2E; /* premium card dark background */
+  --color-border:  #2D3748; /* subtle grey border */
+}
+
 /* ── Base reset ─────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 

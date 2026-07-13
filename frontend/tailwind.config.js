@@ -1,5 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  darkMode: 'class',
   content: ['./index.html', './src/**/*.{js,jsx}'],
   theme: {
     // ── Override default font family everywhere ──────────────
@@ -10,11 +11,11 @@ export default {
     extend: {
       colors: {
         // ── Design system tokens ──────────────────────────────
-        ink:     '#0F1117',          // primary text
-        slate:   '#6B7280',          // secondary / labels
-        surface: '#F7F8FC',          // page background
-        card:    '#FFFFFF',          // card background
-        border:  '#E5E7EB',          // default border
+        ink:     'var(--color-ink)',          // primary text
+        slate:   'var(--color-slate)',          // secondary / labels
+        surface: 'var(--color-surface)',          // page background
+        card:    'var(--color-card)',          // card background
+        border:  'var(--color-border)',          // default border
 
         // ── Brand colors ──────────────────────────────────────
         accent: {

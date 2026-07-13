@@ -33,7 +33,7 @@ function CenterLabel({ cx, cy, total }) {
       <text
         x={cx} y={cy - 8}
         textAnchor="middle"
-        fill="#6B7280"
+        fill="var(--color-slate)"
         fontSize={10}
         fontFamily="Plus Jakarta Sans"
         fontWeight={600}
@@ -45,7 +45,7 @@ function CenterLabel({ cx, cy, total }) {
       <text
         x={cx} y={cy + 12}
         textAnchor="middle"
-        fill="#0F1117"
+        fill="var(--color-ink)"
         fontSize={15}
         fontFamily="IBM Plex Mono"
         fontWeight={600}
@@ -66,7 +66,7 @@ function renderCustomLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent
   return (
     <text
       x={x} y={y}
-      fill="#6B7280"
+      fill="var(--color-slate)"
       textAnchor={x > cx ? 'start' : 'end'}
       dominantBaseline="central"
       fontSize={10}
