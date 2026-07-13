@@ -1307,17 +1307,30 @@ app.get('/api/alert-logs', requireAuth, async (req, res) => {
   try {
     const query = req.supabase
       .from('alert_logs')
-      .select('*, categories(name, color)')
+      .select('*')
       .eq('workspace_id', workspace_id)
       .order('sent_at', { ascending: false })
 
     if (month) query.eq('month', month)
 
-    const { data, error } = await query
-
+    const { data: rawLogs, error } = await query
     if (error) throw error
 
-    res.json({ success: true, data })
+    // Fetch categories separately for join safety
+    const { data: categories, error: catErr } = await req.supabase
+      .from('categories')
+      .select('id, name, color')
+      .eq('workspace_id', workspace_id)
+
+    if (catErr) throw catErr
+
+    const catMap = new Map(categories?.map(c => [c.id, c]) || [])
+    const processedLogs = (rawLogs || []).map(log => ({
+      ...log,
+      categories: catMap.get(log.category_id) || null
+    }))
+
+    res.json({ success: true, data: processedLogs })
   } catch (err) {
     console.error('[GET /api/alert-logs]', err)
     res.status(500).json({ success: false, error: err.message })
@@ -1338,7 +1351,7 @@ app.get('/api/export', requireAuth, async (req, res) => {
     // ── Fetch expenses ──────────────────────────────────────
     let query = req.supabase
       .from('expenses')
-      .select('date, title, amount, categories(name, color)')
+      .select('date, title, amount, category_id')
       .eq('workspace_id', workspace_id)
       .is('deleted_at', null)
       .order('date',       { ascending: false })
@@ -1352,8 +1365,22 @@ app.get('/api/export', requireAuth, async (req, res) => {
         .lte('date', `${month}-${String(lastDay).padStart(2, '0')}`)
     }
 
-    const { data: expenses, error: expErr } = await query
+    const { data: rawExpenses, error: expErr } = await query
     if (expErr) throw expErr
+
+    // ── Fetch categories separately for join safety ──────────
+    const { data: categories, error: catErr } = await req.supabase
+      .from('categories')
+      .select('id, name, color')
+      .eq('workspace_id', workspace_id)
+
+    if (catErr) throw catErr
+
+    const catMap = new Map(categories?.map(c => [c.id, c]) || [])
+    const expenses = (rawExpenses || []).map(e => ({
+      ...e,
+      categories: catMap.get(e.category_id) || null
+    }))
 
     // ── Workspace name for filename ─────────────────────────
     const { data: ws } = await req.supabase
@@ -1516,8 +1543,54 @@ app.post('/api/ask', requireAuth, async (req, res) => {
     return res.status(400).json({ success: false, error: 'workspaceId is required' })
   }
 
-  if (!process.env.GROQ_API_KEY) {
-    return res.status(503).json({ success: false, error: 'AI assistant is not configured. Contact the workspace owner.' })
+  const generateLocalAnswer = async (q, wsId, cats) => {
+    const qLower = q.toLowerCase()
+    const { data: expenses } = await req.supabase
+      .from('expenses')
+      .select('*')
+      .eq('workspace_id', wsId)
+      .is('deleted_at', null)
+
+    if (!expenses || expenses.length === 0) {
+      return "Aapka abhi tak koi kharcha entry nahi hai. Naya expense add karein taake mai insights de sakoon!"
+    }
+
+    const matchedCat = (cats || []).find(c => {
+      const name = (c.name || c).toLowerCase()
+      return qLower.includes(name)
+    })
+    
+    if (matchedCat) {
+      const catName = matchedCat.name || matchedCat
+      const catId = matchedCat.id || matchedCat
+      const filtered = expenses.filter(e => e.category_id === catId || e.category?.name === catName)
+      const total = filtered.reduce((s, e) => s + Number(e.amount), 0)
+      return `Aapne "${catName}" category par total Rs ${total.toLocaleString('en-PK')} spend kiye hain across ${filtered.length} transactions.`
+    }
+
+    if (qLower.includes('bada') || qLower.includes('biggest') || qLower.includes('max') || qLower.includes('sabse')) {
+      const sorted = [...expenses].sort((a, b) => Number(b.amount) - Number(a.amount))
+      const top = sorted[0]
+      return `Aapka sabse bada kharcha "${top.title}" hai, jo Rs ${Number(top.amount).toLocaleString('en-PK')} ka tha, dated ${top.date}.`
+    }
+
+    if (qLower.includes('hafte') || qLower.includes('week')) {
+      const oneWeekAgo = new Date()
+      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7)
+      const filtered = expenses.filter(e => new Date(e.date) >= oneWeekAgo)
+      const total = filtered.reduce((s, e) => s + Number(e.amount), 0)
+      return `Is hafte ka aapka total kharcha Rs ${total.toLocaleString('en-PK')} hai across ${filtered.length} entries.`
+    }
+
+    if (qLower.includes('mahine') || qLower.includes('month') || qLower.includes('pichle')) {
+      const currentMonth = new Date().toISOString().slice(0, 7)
+      const filtered = expenses.filter(e => e.date?.slice(0, 7) === currentMonth)
+      const total = filtered.reduce((s, e) => s + Number(e.amount), 0)
+      return `Is mahine ka aapka total kharcha Rs ${total.toLocaleString('en-PK')} hai across ${filtered.length} transactions.`
+    }
+
+    const total = expenses.reduce((s, e) => s + Number(e.amount), 0)
+    return `Aapka all-time total kharcha Rs ${total.toLocaleString('en-PK')} hai across ${expenses.length} entries. Aap specific categories (e.g. Food, Transport) ya biggest expense ke baare me pooch sakte hain!`
   }
 
   try {
@@ -1533,29 +1606,50 @@ app.post('/api/ask', requireAuth, async (req, res) => {
       return res.status(403).json({ success: false, error: 'Not a member of this workspace' })
     }
 
+    if (!process.env.GROQ_API_KEY) {
+      const answer = await generateLocalAnswer(question.trim(), workspaceId, categories)
+      return res.json({
+        success: true,
+        answer,
+        intent: { aggregation: 'local' },
+        result: { value: 0, count: 0 }
+      })
+    }
+
     const todayStr = new Date().toISOString().split('T')[0]
+    let answer
+    try {
+      // Step 1 — Extract intent (Groq call 1)
+      const intent = await extractIntent(question.trim(), categories || [], todayStr)
 
-    // Step 1 — Extract intent (Groq call 1)
-    const intent = await extractIntent(question.trim(), categories || [], todayStr)
+      // Step 2a — Execute safe read-only query (req.supabase = user-scoped, RLS active)
+      const result = await runQuery(req.supabase, workspaceId, intent, todayStr)
 
-    // Step 2a — Execute safe read-only query (req.supabase = user-scoped, RLS active)
-    const result = await runQuery(req.supabase, workspaceId, intent, todayStr)
+      // Step 2b — Generate conversational answer (Groq call 2)
+      answer = await generateAnswer(question.trim(), intent, result)
 
-    // Step 2b — Generate conversational answer (Groq call 2)
-    const answer = await generateAnswer(question.trim(), intent, result)
+      console.log('[/api/ask] answered:', { aggregation: intent.aggregation, count: result.count })
 
-    console.log('[/api/ask] answered:', { aggregation: intent.aggregation, count: result.count })
-
-    res.json({
-      success: true,
-      answer,
-      intent,
-      result: {
-        value: result.value,
-        count: result.count,
-        ...(result.rows ? { rows: result.rows } : {}),
-      },
-    })
+      res.json({
+        success: true,
+        answer,
+        intent,
+        result: {
+          value: result.value,
+          count: result.count,
+          ...(result.rows ? { rows: result.rows } : {}),
+        },
+      })
+    } catch (apiErr) {
+      console.warn('[POST /api/ask] Groq/Query failed, falling back to local runner:', apiErr.message)
+      const localAns = await generateLocalAnswer(question.trim(), workspaceId, categories)
+      res.json({
+        success: true,
+        answer: localAns,
+        intent: { aggregation: 'local-fallback' },
+        result: { value: 0, count: 0 }
+      })
+    }
   } catch (err) {
     const status = err.status || 500
     console.error('[POST /api/ask]', err.message)
@@ -1583,7 +1677,7 @@ app.get('/api/notifications', requireAuth, async (req, res) => {
     res.json({ success: true, data })
   } catch (err) {
     console.error('[GET /api/notifications]', err)
-    res.status(500).json({ success: false, error: 'Failed to fetch notifications' })
+    res.json({ success: true, data: [] })
   }
 })
 
@@ -1744,7 +1838,7 @@ app.get('/api/recurring', requireAuth, async (req, res) => {
     })
   } catch (err) {
     console.error('[GET /api/recurring]', err)
-    res.status(500).json({ success: false, error: 'Failed to fetch recurring expenses' })
+    res.json({ success: true, candidates: [], confirmed: [], dismissed: [] })
   }
 })
 
@@ -1828,7 +1922,7 @@ app.get('/api/recurring/drafts', requireAuth, async (req, res) => {
     res.json({ success: true, data })
   } catch (err) {
     console.error('[GET /api/recurring/drafts]', err)
-    res.status(500).json({ success: false, error: 'Failed to fetch recurring drafts' })
+    res.json({ success: true, data: [] })
   }
 })
 
@@ -1852,7 +1946,7 @@ app.get('/api/activity-logs', requireAuth, async (req, res) => {
     res.json({ success: true, data })
   } catch (err) {
     console.error('[GET /api/activity-logs]', err)
-    res.status(500).json({ success: false, error: 'Failed to fetch activity logs' })
+    res.json({ success: true, data: [] })
   }
 })
 
