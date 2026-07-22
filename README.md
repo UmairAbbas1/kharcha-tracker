@@ -2,7 +2,7 @@
 
 **Pakistan's first AI-native expense tracker.** Multi-tenant SaaS built entirely on free-tier infrastructure — Supabase, Groq, Resend, Vercel, Render.
 
-> Built as an R&D project by **Umair Abbas** (AI Engineering Intern) using Kiro AI.
+
 
 ---
 
